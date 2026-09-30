@@ -151,26 +151,66 @@ return {
         install = function()
             if installed then return end
             installed = true
-            -- 只向原生菜单已有的浮动工具栏追加一个子节点。
-            -- 保留 Window、内容根节点和已有布局的身份，避免改变原生窗口定位样式。
-            local originalLayout = builtin.FloatingLayout
-            builtin.FloatingLayout = function(params)
-                if not params.meta or params.meta.class ~= "bottom-bar-keyhints" then
-                    return originalLayout(params)
+            -- 沿原生菜单专用的关闭按钮找到菜单面板，而非底部交通分类栏。
+            -- 保留所有原生节点及其样式身份，只在已有浮动布局中追加入口。
+            local closeButtons, closeChildren = {}, {}
+            local originalButton = builtin.Button
+            builtin.Button = function(params, ...)
+                local node = originalButton(params, ...)
+                if type(params) == "table" and params.meta
+                    and params.meta.class == "fake-builtin-window-close-button" then
+                    closeButtons[node] = true
                 end
+                return node
+            end
+            local originalChild = builtin.FloatingLayoutChild
+            builtin.FloatingLayoutChild = function(params, ...)
+                local node = originalChild(params, ...)
+                if type(params) == "table" and closeButtons[params.item] then
+                    closeButtons[params.item] = nil
+                    closeChildren[node] = true
+                end
+                return node
+            end
+            local originalLayout = builtin.FloatingLayout
+            local logged = false
+            builtin.FloatingLayout = function(params, ...)
+                local menuPanel = false
+                if type(params) == "table" then
+                    for _, child in pairs(params.children or {}) do
+                        if closeChildren[child] then
+                            closeChildren[child] = nil
+                            menuPanel = true
+                        end
+                    end
+                end
+                if not menuPanel then return originalLayout(params, ...) end
                 local copy = {}
                 for key, value in pairs(params) do copy[key] = value end
                 copy.children = {}
                 for _, child in ipairs(params.children or {}) do copy.children[#copy.children + 1] = child end
-                copy.children[#copy.children + 1] = builtin.FloatingLayoutChild {
-                    h = 1, v = 0, item = textButton("模板管理", function()
+                local button = textButton("模板管理", function()
                         if not gameCtx then return end
                         gameCtx.windowContainer:get():getApi().addSingletonWindow(ManagerWindow, {})
                         api.gui.byId.setVisible(windowId, true)
                         gameCtx.windowContainer:get():getApi().moveSingletonWindowToFront(ManagerWindow)
-                    end),
+                    end)
+                copy.children[#copy.children + 1] = originalChild {
+                    h = 1, v = 0,
+                    item = builtin.BoxLayout {
+                        orientation = builtin.type.Orientation.Horizontal,
+                        children = {
+                            button,
+                            -- 留出右侧关闭按钮的空间，不改变它的位置或点击区域。
+                            builtin.Component {meta = sized(52, 44), layout = builtin.BoxLayout {children = {}}},
+                        },
+                    },
                 }
-                return originalLayout(copy)
+                if not logged then
+                    debugPrint("[Blueprint] 模板管理入口已挂载到建筑菜单关闭按钮同层")
+                    logged = true
+                end
+                return originalLayout(copy, ...)
             end
         end,
 }

@@ -665,13 +665,21 @@ test("manager button targets construction window and renders searchable preview 
     local constructionWindow = {id = "menu.construction.react", content = native}
     assert(builtin.Window(constructionWindow).params == constructionWindow)
     local originalChild = {kind = "nativeToolbar"}
-    local layoutParams = {meta = {class = "bottom-bar-keyhints"}, children = {originalChild}}
+    local closeParams = {meta = {class = "fake-builtin-window-close-button"}, onClick = function() end}
+    local nativeClose = builtin.Button(closeParams)
+    local nativeCloseChild = builtin.FloatingLayoutChild {item = nativeClose}
+    local layoutParams = {children = {originalChild, nativeCloseChild}}
     local injected = builtin.FloatingLayout(layoutParams)
     assert(injected.params.meta == layoutParams.meta and injected.params.children[1] == originalChild)
-    assert(#layoutParams.children == 1 and #injected.params.children == 2)
+    assert(#layoutParams.children == 2 and #injected.params.children == 3)
+    assert(injected.params.children[2] == nativeCloseChild and nativeClose.params == closeParams)
     local otherLayout = {meta = {class = "other"}, children = {originalChild}}
     assert(builtin.FloatingLayout(otherLayout).params == otherLayout)
-    local button = injected.params.children[2].params.item
+    local bottomToolbar = {meta = {class = "bottom-bar-keyhints"}, children = {originalChild}}
+    assert(builtin.FloatingLayout(bottomToolbar).params == bottomToolbar)
+    -- 标记在匹配后消耗，不给之后引用同一节点的布局再次追加入口。
+    assert(builtin.FloatingLayout(layoutParams).params == layoutParams)
+    local button = injected.params.children[3].params.item.params.children[1]
     assert(button.params.content.params.text == "模板管理")
     button.params.onClick()
     assert(shown["blueprint.template.manager"] and windowRecipe)
