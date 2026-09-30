@@ -1,7 +1,7 @@
 {
   "name": "Blueprint Menu Demo",
-  "summary": "Development example: place two vanilla goods warehouses from the construction menu.",
-  "description": "Research prototype. Adds one menu card to Rail Buildings and Warehouses. It uses vanilla construction resources. This package has not been tested in the game.",
+  "summary": "Save a single player construction as a reusable building template.",
+  "description": "Adds Save Building Template to station and warehouse menus. Click one player building to save its parameters and modules in a local library and refresh the native menu. The original warehouse pair demo is retained. Runtime capture and refresh still require in-game verification.",
   "authors": [{ "name": "lihanyu", "role": "CREATOR" }],
   "tags": ["Warehouse"],
   "dependencies": [],

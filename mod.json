@@ -1,6 +1,6 @@
 {
   "modId": "blueprint_demo",
-  "revision": 1,
+  "revision": 3,
   "severityAdd": "None",
   "severityRemove": "Warning",
   "visible": true,
