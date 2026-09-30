@@ -596,6 +596,14 @@ test("descriptions persist, reload, copy and clear without changing other templa
     local description = "货运站 <测试> & 模块\n第二行 " .. string.rep("长描述", 100)
     library.updateMetadata(id, previous[1].name, description)
     assert(disk.templates[1].description == description)
+    acknowledge()
+    local function menuDescription()
+        for _, card in ipairs(library.decorateDefinitions({carrier})) do
+            if card.resName == library.resourceName(id) then return card.description end
+        end
+        error("Saved template missing from construction menu")
+    end
+    assert(menuDescription() == description)
     local restored = require("blueprint_demo::/blueprint/persistence.lua").decode(
         require("blueprint_demo::/blueprint/persistence.lua").encode(disk))
     assert(restored.templates[1].description == description)
@@ -613,6 +621,7 @@ test("descriptions persist, reload, copy and clear without changing other templa
     library.updateMetadata(id, previous[1].name, "")
     assert(library.list()[1].description == "")
     acknowledge()
+    assert(menuDescription() == _("BLUEPRINT_SAVED_DESCRIPTION"))
 end)
 test("copy and deletion preserve monotonic IDs and other template contents", function()
     local originals = library.list()

@@ -160,7 +160,8 @@ function library.decorateDefinitions(definitions)
             definition.blueprintPayload = transport.encode(core.toTemplate(snapshot, api.res, api.engine.util.getYear()))
             definition.costsYearProgression = false
             definition.name = snapshot.name
-            definition.description = gettext("BLUEPRINT_SAVED_DESCRIPTION")
+            definition.description = snapshot.description and snapshot.description ~= "" and snapshot.description
+                or gettext("BLUEPRINT_SAVED_DESCRIPTION")
             local icon, preview = core.templateImages(snapshot)
             definition.icon = {icon = icon}
             definition.previewIcon = {icon = preview}

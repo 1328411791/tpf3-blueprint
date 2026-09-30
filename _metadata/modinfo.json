@@ -5,7 +5,7 @@
             "role": "CREATOR"
         }
     ],
-    "description": "将玩家建筑保存为可重复使用的蓝图。通过建造菜单右上角的模板管理窗口搜索、重命名、复制和删除模板，保留建筑参数与模块，并同步到原生建造菜单。<br><hr><br>将玩家建筑保存为可重复使用的蓝图。通过建造菜单右上角的模板管理窗口搜索、重命名、复制和删除模板，保留建筑参数与模块，并同步到原生建造菜单。<br><hr><br>Save player buildings as reusable blueprints. Search, rename, duplicate and delete saved templates through the template manager at the upper right of the construction menu. Templates retain building parameters and modules and synchronize with the construction menu.",
+    "description": "将玩家自定义的建筑保存为可重复使用的蓝图。通过建造菜单右上角的模板管理窗口搜索、重命名、复制和删除模板，保留建筑参数与模块，并同步到原生建造菜单中。<br><hr><br>Save player buildings as reusable blueprints. Search, rename, duplicate and delete saved templates through the template manager at the upper right of the construction menu. Templates retain building parameters and modules and synchronize with the construction menu.",
     "localization": {
         "en": {
             "description": "Save player buildings as reusable blueprints. Search, rename, duplicate and delete saved templates through the template manager at the upper right of the construction menu. Templates retain building parameters and modules and synchronize with the construction menu.",
@@ -13,12 +13,12 @@
             "summary": "Save and manage reusable building templates in the construction menu."
         },
         "zh_CN": {
-            "description": "将玩家建筑保存为可重复使用的蓝图。通过建造菜单右上角的模板管理窗口搜索、重命名、复制和删除模板，保留建筑参数与模块，并同步到原生建造菜单。",
+            "description": "将玩家自定义的建筑保存为可重复使用的蓝图。通过建造菜单右上角的模板管理窗口搜索、重命名、复制和删除模板，保留建筑参数与模块，并同步到原生建造菜单中。<br><hr><br>Save player buildings as reusable blueprints. Search, rename, duplicate and delete saved templates through the template manager at the upper right of the construction menu. Templates retain building parameters and modules and synchronize with the construction menu.",
             "name": "蓝图",
             "summary": "在建造菜单中保存和管理可重复使用的建筑模板。"
         }
     },
-    "name": "蓝图",
+    "name": "Blueprint",
     "summary": "Save and manage reusable building templates in the construction menu.",
     "tags": [
         "Misc",
