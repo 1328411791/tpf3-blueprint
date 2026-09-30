@@ -1,9 +1,15 @@
 {
-  "name": "Blueprint Menu Demo",
-  "summary": "Save a single player construction as a reusable building template.",
-  "description": "Adds Save Building Template to station and warehouse menus. Click one player building to save its parameters and modules in a local library and refresh the native menu. The original warehouse pair demo is retained. Runtime capture and refresh still require in-game verification.",
-  "authors": [{ "name": "lihanyu", "role": "CREATOR" }],
-  "tags": ["Warehouse"],
-  "dependencies": [],
-  "url": ""
+    "authors": [
+        {
+            "name": "lihanyu",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "Save single player buildings and manage this mod's template library using a button at the upper right of the construction menu. Search preview rows, rename, duplicate and delete templates with synchronized menu updates. The original warehouse pair demo is retained. New UI still requires in-game verification.",
+    "name": "Blueprint",
+    "summary": "Save and manage reusable building templates in the construction menu.",
+    "tags": [
+        "Warehouse"
+    ],
+    "url": ""
 }

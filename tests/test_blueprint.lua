@@ -624,8 +624,12 @@ test("manager button targets construction window and renders searchable preview 
         Orientation = {Vertical = "vertical", Horizontal = "horizontal"},
         ImageViewScaling = {AutoFit = "fit"}, ScrollBarPolicy = {AlwaysOff = "off", AsNeeded = "auto"},
     }}
-    for _, name in ipairs({"Window", "Button", "TextView", "ImageView", "TextInputField", "BoxLayout", "ScrollArea", "FloatingLayout", "FloatingLayoutChild"}) do
+    for _, name in ipairs({"Window", "Component", "Button", "TextView", "ImageView", "TextInputField", "BoxLayout", "ScrollArea", "FloatingLayout", "FloatingLayoutChild"}) do
         builtin[name] = node(name)
+    end
+    builtin.ScrollArea = function(params)
+        assert(params.content.kind == "Component", "ScrollArea does not accept a Layout as content")
+        return {kind = "ScrollArea", params = params}
     end
     local react = {
         RegisterWrapperRecipe = function(name, _, fn) recipes[name] = fn; return fn end,
@@ -652,14 +656,22 @@ test("manager button targets construction window and renders searchable preview 
     }
     manager.setContext({windowContainer = {get = function() return {getApi = function() return windowApi end} end}})
     api.gui = {byId = {setVisible = function(id, visible) shown[id] = visible end}}
+    local nativeWindow = builtin.Window
     manager.install()
+    assert(builtin.Window == nativeWindow)
     local untouched = {id = "ordinary", content = {kind = "native"}}
     assert(builtin.Window(untouched).params == untouched)
     local native = {kind = "constructionContent"}
-    local injected = builtin.Window({id = "menu.construction.react", content = native})
-    assert(injected.params.content.kind == "FloatingLayout")
-    assert(injected.params.content.params.children[1].params.item == native)
-    local button = injected.params.content.params.children[2].params.item
+    local constructionWindow = {id = "menu.construction.react", content = native}
+    assert(builtin.Window(constructionWindow).params == constructionWindow)
+    local originalChild = {kind = "nativeToolbar"}
+    local layoutParams = {meta = {class = "bottom-bar-keyhints"}, children = {originalChild}}
+    local injected = builtin.FloatingLayout(layoutParams)
+    assert(injected.params.meta == layoutParams.meta and injected.params.children[1] == originalChild)
+    assert(#layoutParams.children == 1 and #injected.params.children == 2)
+    local otherLayout = {meta = {class = "other"}, children = {originalChild}}
+    assert(builtin.FloatingLayout(otherLayout).params == otherLayout)
+    local button = injected.params.children[2].params.item
     assert(button.params.content.params.text == "模板管理")
     button.params.onClick()
     assert(shown["blueprint.template.manager"] and windowRecipe)
@@ -668,11 +680,40 @@ test("manager button targets construction window and renders searchable preview 
     assert(window.kind == "Window" and window.params.id == "blueprint.template.manager")
     local children = window.params.content.params.children
     assert(children[2].kind == "ScrollArea")
-    local rows = children[2].params.content.params.children
+    assert(children[2].params.content.kind == "Component")
+    local rows = children[2].params.content.params.layout.params.children
     assert(#rows == #library.list() and rows[1].params.children[1].kind == "ImageView")
     children[1].params.children[1].params.onTyping("没有这个模板")
     cursor = 0
-    local empty = windowRecipe({}).params.content.params.children[2].params.content.params.children
+    local empty = windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
     assert(#empty == 1 and empty[1].params.text == "没有匹配的模板")
+    children[1].params.children[1].params.onCancel()
+    local function renderRows()
+        cursor = 0
+        return windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
+    end
+    local function rowControls(row)
+        return row.params.children[2].params.children[3].params.children
+    end
+    local firstId = library.list()[1].id
+    rowControls(renderRows()[1])[1].params.onClick()
+    local editControls = rowControls(renderRows()[1])
+    editControls[1].params.onTyping("管理窗口修改")
+    editControls[2].params.onClick()
+    assert(library.list("管理窗口修改")[1].id == firstId)
+    local countBefore = #library.list()
+    rowControls(renderRows()[1])[2].params.onClick()
+    assert(#library.list() == countBefore + 1)
+    local copiedId = library.list()[countBefore + 1].id
+    rowControls(renderRows()[countBefore + 1])[3].params.onClick()
+    assert(#library.list() == countBefore + 1)
+    local confirmation = rowControls(renderRows()[countBefore + 1])
+    assert(confirmation[1].params.text == "删除此模板？")
+    confirmation[3].params.onClick()
+    assert(#library.list() == countBefore + 1)
+    rowControls(renderRows()[countBefore + 1])[3].params.onClick()
+    rowControls(renderRows()[countBefore + 1])[2].params.onClick()
+    assert(#library.list() == countBefore)
+    for _, saved in ipairs(library.list()) do assert(saved.id ~= copiedId) end
 end)
 print(tostring(passed) .. " Lua contract tests passed")

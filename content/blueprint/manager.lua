@@ -30,7 +30,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local editing = react.useState(nil)
     local draft = react.useState("")
     local deleting = react.useState(nil)
-    local message = react.useState("新增地图建筑：点击“从地图新增”，再选择“保存建筑模板”并点击建筑。")
+    local message = react.useState("新增：点“从地图新增”，再用“保存建筑模板”选择建筑。")
     local change = react.useState(0)
     local function run(fn, success)
         local ok, failure = pcall(fn)
@@ -49,7 +49,8 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         if ok and event then react.fireEvent(nil, "blueprintLibraryChanged", event) end
     end)
     local ok, templates = pcall(library.list, query:old())
-    if not ok then templates = {}; message:set("模板库读取失败") end
+    local status = message:old()
+    if not ok then status = "模板库读取失败：" .. tostring(templates); templates = {} end
     local rows = {}
     for _, snapshot in ipairs(templates) do
         local id = snapshot.id
@@ -96,7 +97,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             children = {
                 builtin.ImageView {
                     meta = sized(130, 90),
-                    path = snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga",
+                    path = sourceId >= 0 and snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga",
                     scaling = builtin.type.ImageViewScaling.AutoFit,
                 },
                 builtin.BoxLayout {
@@ -134,9 +135,11 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                     meta = sized(850, 440),
                     horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
                     verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
-                    content = builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = rows},
+                    content = builtin.Component {
+                        layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = rows},
+                    },
                 },
-                builtin.TextView {text = message:old()},
+                builtin.TextView {text = status},
             },
         },
     }
@@ -148,21 +151,26 @@ return {
         install = function()
             if installed then return end
             installed = true
-            local originalWindow = builtin.Window
-            builtin.Window = react.RegisterWrapperRecipe("BlueprintWindowWithManager", originalWindow, function(params)
-                if params.id ~= "menu.construction.react" then return originalWindow(params) end
+            -- 只向原生菜单已有的浮动工具栏追加一个子节点。
+            -- 保留 Window、内容根节点和已有布局的身份，避免改变原生窗口定位样式。
+            local originalLayout = builtin.FloatingLayout
+            builtin.FloatingLayout = function(params)
+                if not params.meta or params.meta.class ~= "bottom-bar-keyhints" then
+                    return originalLayout(params)
+                end
                 local copy = {}
                 for key, value in pairs(params) do copy[key] = value end
-                copy.content = builtin.FloatingLayout {children = {
-                    builtin.FloatingLayoutChild {h = -1, v = -1, item = params.content},
-                    builtin.FloatingLayoutChild {h = 1, v = 0, item = textButton("模板管理", function()
+                copy.children = {}
+                for _, child in ipairs(params.children or {}) do copy.children[#copy.children + 1] = child end
+                copy.children[#copy.children + 1] = builtin.FloatingLayoutChild {
+                    h = 1, v = 0, item = textButton("模板管理", function()
                         if not gameCtx then return end
                         gameCtx.windowContainer:get():getApi().addSingletonWindow(ManagerWindow, {})
                         api.gui.byId.setVisible(windowId, true)
                         gameCtx.windowContainer:get():getApi().moveSingletonWindowToFront(ManagerWindow)
-                    end)},
-                }}
-                return originalWindow(copy)
-            end)
+                    end),
+                }
+                return originalLayout(copy)
+            end
         end,
 }
