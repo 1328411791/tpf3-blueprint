@@ -615,7 +615,7 @@ test("management rejects invalid targets and retains state when persistence fail
     failWrite = false
     assert(core.equal(library.list(), previous))
 end)
-test("manager button targets construction window and renders searchable preview rows", function()
+test("manager opens independently without replacing native UI and renders searchable preview rows", function()
     local recipes, states, cursor = {}, {}, 0
     local function node(kind)
         return function(params) return {kind = kind, params = params} end
@@ -654,35 +654,28 @@ test("manager button targets construction window and renders searchable preview 
         addSingletonWindow = function(recipe) windowRecipe = recipe end,
         moveSingletonWindowToFront = function(recipe) assert(recipe == windowRecipe) end,
     }
-    manager.setContext({windowContainer = {get = function() return {getApi = function() return windowApi end} end}})
+    local context = {windowContainer = {get = function() return {getApi = function() return windowApi end} end}}
     api.gui = {byId = {setVisible = function(id, visible) shown[id] = visible end}}
-    local nativeWindow = builtin.Window
+    local nativeWindow, nativeButton, nativeLayout = builtin.Window, builtin.Button, builtin.FloatingLayout
+    manager.open(context)
+    assert(builtin.Window == nativeWindow and builtin.Button == nativeButton and builtin.FloatingLayout == nativeLayout)
+    assert(shown["blueprint.template.manager"] and windowRecipe)
     manager.install()
     assert(builtin.Window == nativeWindow)
-    local untouched = {id = "ordinary", content = {kind = "native"}}
-    assert(builtin.Window(untouched).params == untouched)
-    local native = {kind = "constructionContent"}
-    local constructionWindow = {id = "menu.construction.react", content = native}
-    assert(builtin.Window(constructionWindow).params == constructionWindow)
-    local originalChild = {kind = "nativeToolbar"}
-    local closeParams = {meta = {class = "fake-builtin-window-close-button"}, onClick = function() end}
-    local nativeClose = builtin.Button(closeParams)
-    local nativeCloseChild = builtin.FloatingLayoutChild {item = nativeClose}
-    local layoutParams = {children = {originalChild, nativeCloseChild}}
-    local injected = builtin.FloatingLayout(layoutParams)
-    assert(injected.params.meta == layoutParams.meta and injected.params.children[1] == originalChild)
-    assert(#layoutParams.children == 2 and #injected.params.children == 3)
-    assert(injected.params.children[2] == nativeCloseChild and nativeClose.params == closeParams)
-    local otherLayout = {meta = {class = "other"}, children = {originalChild}}
-    assert(builtin.FloatingLayout(otherLayout).params == otherLayout)
-    local bottomToolbar = {meta = {class = "bottom-bar-keyhints"}, children = {originalChild}}
-    assert(builtin.FloatingLayout(bottomToolbar).params == bottomToolbar)
-    -- 标记在匹配后消耗，不给之后引用同一节点的布局再次追加入口。
-    assert(builtin.FloatingLayout(layoutParams).params == layoutParams)
-    local button = injected.params.children[3].params.item.params.children[1]
-    assert(button.params.content.params.text == "模板管理")
-    button.params.onClick()
-    assert(shown["blueprint.template.manager"] and windowRecipe)
+    local closeClicks = 0
+    local closeButton = builtin.Button {meta = {class = "fake-builtin-window-close-button"}, onClick = function() closeClicks = closeClicks + 1 end}
+    local closeChild = builtin.FloatingLayoutChild {item = closeButton}
+    local originalContent = {kind = "native-menu"}
+    local originalParams = {children = {originalContent, closeChild}}
+    local panel = builtin.FloatingLayout(originalParams).params
+    assert(#originalParams.children == 2 and #panel.children == 3)
+    assert(panel.children[1] == originalContent and panel.children[3] == closeChild)
+    local entry = panel.children[2].params.item.params
+    assert(entry.meta.mouseTransparent and entry.children[2].params.meta.mouseTransparent)
+    assert(entry.children[1].params.content.params.text == "模板管理")
+    entry.children[1].params.onClick()
+    panel.children[3].params.item.params.onClick()
+    assert(closeClicks == 1)
     cursor = 0
     local window = windowRecipe({})
     assert(window.kind == "Window" and window.params.id == "blueprint.template.manager")
@@ -691,6 +684,9 @@ test("manager button targets construction window and renders searchable preview 
     assert(children[2].params.content.kind == "Component")
     local rows = children[2].params.content.params.layout.params.children
     assert(#rows == #library.list() and rows[1].params.children[1].kind == "ImageView")
+    assert(#rows[1].params.children == 3)
+    assert(rows[1].params.children[2].params.layout.params.children[1].kind == "TextView")
+    assert(#children[1].params.children == 2 and children[1].params.children[2].kind == "TextView")
     children[1].params.children[1].params.onTyping("没有这个模板")
     cursor = 0
     local empty = windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
@@ -701,13 +697,13 @@ test("manager button targets construction window and renders searchable preview 
         return windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
     end
     local function rowControls(row)
-        return row.params.children[2].params.children[3].params.children
+        return row.params.children[3].params.layout.params.children[1].params.item.params.children
     end
     local firstId = library.list()[1].id
     rowControls(renderRows()[1])[1].params.onClick()
     local editControls = rowControls(renderRows()[1])
-    editControls[1].params.onTyping("管理窗口修改")
-    editControls[2].params.onClick()
+    renderRows()[1].params.children[2].params.layout.params.children[1].params.onTyping("管理窗口修改")
+    editControls[1].params.onClick()
     assert(library.list("管理窗口修改")[1].id == firstId)
     local countBefore = #library.list()
     rowControls(renderRows()[1])[2].params.onClick()

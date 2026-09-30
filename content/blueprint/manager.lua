@@ -30,7 +30,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local editing = react.useState(nil)
     local draft = react.useState("")
     local deleting = react.useState(nil)
-    local message = react.useState("新增：点“从地图新增”，再用“保存建筑模板”选择建筑。")
+    local message = react.useState("")
     local change = react.useState(0)
     local function run(fn, success)
         local ok, failure = pcall(fn)
@@ -67,13 +67,14 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         local missing = core.missingResources(snapshot, api.res)
         if #missing > 0 then details = details .. " · 缺少依赖，暂不可建造" end
         local controls
+        local nameContent = builtin.TextView {text = snapshot.name}
         if editing:old() == id then
-            controls = {
-                builtin.TextInputField {
-                    meta = sized(300, 32), value = draft:old(), maxLength = 128,
+            nameContent = builtin.TextInputField {
+                    meta = sized(400, 32), value = draft:old(), maxLength = 128,
                     onTyping = function(value) draft:set(value) end,
                     onValueChange = function(value) draft:set(value) end,
-                },
+            }
+            controls = {
                 textButton("保存名称", function() run(function() library.rename(id, draft:old()) end, "名称已保存，菜单正在同步") end),
                 textButton("取消", function() editing:set(nil) end),
             }
@@ -100,13 +101,24 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                     path = sourceId >= 0 and snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga",
                     scaling = builtin.type.ImageViewScaling.AutoFit,
                 },
-                builtin.BoxLayout {
-                    orientation = builtin.type.Orientation.Vertical,
-                    children = {
-                        builtin.TextView {text = snapshot.name},
-                        builtin.TextView {text = details},
-                        builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
+                builtin.Component {
+                    meta = sized(420, 90),
+                    layout = builtin.BoxLayout {
+                        orientation = builtin.type.Orientation.Vertical,
+                        children = {
+                            nameContent,
+                            builtin.TextView {text = details},
+                        },
                     },
+                },
+                builtin.Component {
+                    meta = sized(280, 90),
+                    layout = builtin.FloatingLayout {children = {
+                        builtin.FloatingLayoutChild {
+                            h = 1, v = 0.5,
+                            item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
+                        },
+                    }},
                 },
             },
         }
@@ -123,12 +135,11 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             children = {
                 builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
                     builtin.TextInputField {
-                        meta = sized(430, 34), value = query:old(), placeholderText = "搜索模板名称…",
+                        meta = sized(740, 34), value = query:old(), placeholderText = "搜索模板名称…",
                         onTyping = function(value) query:set(value) end,
                         onValueChange = function(value) query:set(value) end,
                         onCancel = function() query:set("") end,
                     },
-                    textButton("从地图新增", function() reveal("blueprint_demo::/blueprint/save_tool.res") end),
                     builtin.TextView {text = tostring(#templates) .. " 个模板"},
                 }},
                 builtin.ScrollArea {
@@ -145,72 +156,72 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     }
 end)
 
+local function open(context)
+        gameCtx = context or gameCtx
+        assert(gameCtx and gameCtx.windowContainer, "模板管理缺少游戏窗口上下文")
+        local windowApi = gameCtx.windowContainer:get():getApi()
+        windowApi.addSingletonWindow(ManagerWindow, {})
+        api.gui.byId.setVisible(windowId, true)
+        windowApi.moveSingletonWindowToFront(ManagerWindow)
+end
+
 local installed = false
 return {
-        setContext = function(context) gameCtx = context end,
-        install = function()
-            if installed then return end
-            installed = true
-            -- 沿原生菜单专用的关闭按钮找到菜单面板，而非底部交通分类栏。
-            -- 保留所有原生节点及其样式身份，只在已有浮动布局中追加入口。
-            local closeButtons, closeChildren = {}, {}
-            local originalButton = builtin.Button
-            builtin.Button = function(params, ...)
-                local node = originalButton(params, ...)
-                if type(params) == "table" and params.meta
-                    and params.meta.class == "fake-builtin-window-close-button" then
-                    closeButtons[node] = true
-                end
-                return node
+    open = open,
+    setContext = function(context) gameCtx = context end,
+    install = function()
+        if installed then return end
+        installed = true
+        local closeButtons, closeChildren = {}, {}
+        local originalButton, originalChild, originalLayout = builtin.Button, builtin.FloatingLayoutChild, builtin.FloatingLayout
+        builtin.Button = function(params, ...)
+            local node = originalButton(params, ...)
+            if type(params) == "table" and params.meta and params.meta.class == "fake-builtin-window-close-button" then
+                closeButtons[node] = true
             end
-            local originalChild = builtin.FloatingLayoutChild
-            builtin.FloatingLayoutChild = function(params, ...)
-                local node = originalChild(params, ...)
-                if type(params) == "table" and closeButtons[params.item] then
-                    closeButtons[params.item] = nil
-                    closeChildren[node] = true
-                end
-                return node
+            return node
+        end
+        builtin.FloatingLayoutChild = function(params, ...)
+            local node = originalChild(params, ...)
+            if type(params) == "table" and closeButtons[params.item] then
+                closeButtons[params.item] = nil
+                closeChildren[node] = true
             end
-            local originalLayout = builtin.FloatingLayout
-            local logged = false
-            builtin.FloatingLayout = function(params, ...)
-                local menuPanel = false
-                if type(params) == "table" then
-                    for _, child in pairs(params.children or {}) do
-                        if closeChildren[child] then
-                            closeChildren[child] = nil
-                            menuPanel = true
-                        end
+            return node
+        end
+        builtin.FloatingLayout = function(params, ...)
+            local closeChild
+            if type(params) == "table" then
+                for _, child in pairs(params.children or {}) do
+                    if closeChildren[child] then
+                        closeChildren[child] = nil
+                        closeChild = child
                     end
                 end
-                if not menuPanel then return originalLayout(params, ...) end
-                local copy = {}
-                for key, value in pairs(params) do copy[key] = value end
-                copy.children = {}
-                for _, child in ipairs(params.children or {}) do copy.children[#copy.children + 1] = child end
-                local button = textButton("模板管理", function()
-                        if not gameCtx then return end
-                        gameCtx.windowContainer:get():getApi().addSingletonWindow(ManagerWindow, {})
-                        api.gui.byId.setVisible(windowId, true)
-                        gameCtx.windowContainer:get():getApi().moveSingletonWindowToFront(ManagerWindow)
-                    end)
-                copy.children[#copy.children + 1] = originalChild {
-                    h = 1, v = 0,
-                    item = builtin.BoxLayout {
-                        orientation = builtin.type.Orientation.Horizontal,
-                        children = {
-                            button,
-                            -- 留出右侧关闭按钮的空间，不改变它的位置或点击区域。
-                            builtin.Component {meta = sized(52, 44), layout = builtin.BoxLayout {children = {}}},
-                        },
-                    },
-                }
-                if not logged then
-                    debugPrint("[Blueprint] 模板管理入口已挂载到建筑菜单关闭按钮同层")
-                    logged = true
-                end
-                return originalLayout(copy, ...)
             end
-        end,
+            if not closeChild then return originalLayout(params, ...) end
+            local copy = {}
+            for key, value in pairs(params) do copy[key] = value end
+            copy.children = {}
+            for _, child in ipairs(params.children) do
+                if child ~= closeChild then copy.children[#copy.children + 1] = child end
+            end
+            local spacerMeta = sized(52, 44)
+            spacerMeta.mouseTransparent = true
+            copy.children[#copy.children + 1] = originalChild {
+                h = 1, v = 0,
+                item = builtin.BoxLayout {
+                    meta = {mouseTransparent = true},
+                    orientation = builtin.type.Orientation.Horizontal,
+                    children = {
+                        originalButton {content = builtin.TextView {text = "模板管理"}, onClick = function() open() end},
+                        builtin.Component {meta = spacerMeta, layout = builtin.BoxLayout {children = {}}},
+                    },
+                },
+            }
+            -- 原生关闭按钮最后绘制，位于入口和透明间距上方，保留它的点击区域。
+            copy.children[#copy.children + 1] = closeChild
+            return originalLayout(copy, ...)
+        end
+    end,
 }
