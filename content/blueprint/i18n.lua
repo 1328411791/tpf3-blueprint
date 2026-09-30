@@ -3,7 +3,7 @@ return function(key, values)
     local text = _(key)
     return (text:gsub("{([%w_]+)}", function(name)
         local value = values and values[name]
-        assert(value ~= nil, "Missing translation placeholder: " .. key .. "." .. name)
+        assert(value ~= nil, _("BLUEPRINT_MISSING_PLACEHOLDER") .. key .. "." .. name)
         return tostring(value)
     end))
 end

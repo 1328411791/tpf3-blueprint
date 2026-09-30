@@ -1,3 +1,4 @@
+local gettext = _
 local transport = require "blueprint_demo::/blueprint/transport.lua"
 local runtime = require "blueprint_demo::/blueprint/runtime.lua"
 local persistence = {}
@@ -10,7 +11,7 @@ end
 
 function persistence.decode(value)
     if type(value) == "table" and value.version == 2 then
-        assert(type(value.data) == "table", _("BLUEPRINT_MISSING_ENCODING"))
+        assert(type(value.data) == "table", gettext("BLUEPRINT_MISSING_ENCODING"))
         return runtime.validateLibrary(transport.decode(value.data))
     end
     -- 读取旧版模板；下次成功保存时自动升级文件格式。

@@ -11,5 +11,17 @@
     "tags": [
         "Warehouse"
     ],
-    "url": ""
+    "url": "",
+    "localization": {
+        "en": {
+            "name": "Blueprint",
+            "summary": "Save and manage reusable building templates in the construction menu.",
+            "description": "Save single player buildings and manage this mod's template library using a button at the upper right of the construction menu. Search preview rows, rename, duplicate and delete templates with synchronized menu updates. The original warehouse pair demo is retained. New UI still requires in-game verification."
+        },
+        "zh_CN": {
+            "name": "Blueprint",
+            "summary": "在建造菜单中保存和管理可重复使用的建筑模板。",
+            "description": "保存单座玩家建筑，通过建造菜单右上角的模板管理窗口搜索、重命名、复制和删除模板。模板保留建筑参数与模块，更新后同步到原生建造菜单。包含原有双仓库演示。"
+        }
+    }
 }

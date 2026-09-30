@@ -1,3 +1,4 @@
+local gettext = _
 local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local react = ug_require "::/gui/main/react.lua"
 local builtin = ug_require "::/gui/main/builtin.lua"
@@ -22,8 +23,8 @@ local function reveal(resName)
     react.fireEvent(nil, "constructionMenuSelectTabForConstruction", {resName = resName})
 end
 local categoryLabels = {
-    rail_buildings = _("BLUEPRINT_RAIL_BUILDINGS"), road_buildings = _("BLUEPRINT_ROAD_BUILDINGS"),
-    water_buildings = _("BLUEPRINT_WATER_BUILDINGS"), air_buildings = _("BLUEPRINT_AIR_BUILDINGS"), warehouses = _("BLUEPRINT_WAREHOUSES"),
+    rail_buildings = gettext("BLUEPRINT_RAIL_BUILDINGS"), road_buildings = gettext("BLUEPRINT_ROAD_BUILDINGS"),
+    water_buildings = gettext("BLUEPRINT_WATER_BUILDINGS"), air_buildings = gettext("BLUEPRINT_AIR_BUILDINGS"), warehouses = gettext("BLUEPRINT_WAREHOUSES"),
 }
 
 local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", builtin.Window, function(_params)
@@ -66,7 +67,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         for _ in pairs(snapshot.modules) do count = count + 1 end
         local details = tr("BLUEPRINT_DETAILS", {categories = table.concat(labels, " / "), count = count})
         local missing = core.missingResources(snapshot, api.res)
-        if #missing > 0 then details = details .. _("BLUEPRINT_MISSING_DEPS") end
+        if #missing > 0 then details = details .. gettext("BLUEPRINT_MISSING_DEPS") end
         local controls
         local nameContent = builtin.TextView {text = snapshot.name}
         if editing:old() == id then
@@ -76,25 +77,26 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                     onValueChange = function(value) draft:set(value) end,
             }
             controls = {
-                textButton(_("BLUEPRINT_SAVE_NAME"), function() run(function() library.rename(id, draft:old()) end, _("BLUEPRINT_NAME_SAVED")) end),
-                textButton(_("BLUEPRINT_CANCEL"), function() editing:set(nil) end),
+                textButton(gettext("BLUEPRINT_SAVE_NAME"), function() run(function() library.rename(id, draft:old()) end, gettext("BLUEPRINT_NAME_SAVED")) end),
+                textButton(gettext("BLUEPRINT_CANCEL"), function() editing:set(nil) end),
             }
         elseif deleting:old() == id then
             controls = {
-                builtin.TextView {text = _("BLUEPRINT_DELETE_CONFIRM")},
-                textButton(_("BLUEPRINT_DELETE_YES"), function() run(function() library.delete(id) end, _("BLUEPRINT_DELETED")) end),
-                textButton(_("BLUEPRINT_CANCEL"), function() deleting:set(nil) end),
+                builtin.TextView {text = gettext("BLUEPRINT_DELETE_CONFIRM")},
+                textButton(gettext("BLUEPRINT_DELETE_YES"), function() run(function() library.delete(id) end, gettext("BLUEPRINT_DELETED")) end),
+                textButton(gettext("BLUEPRINT_CANCEL"), function() deleting:set(nil) end),
             }
         else
             controls = {
-                textButton(_("BLUEPRINT_RENAME"), function() editing:set(id); draft:set(snapshot.name); deleting:set(nil) end),
-                textButton(_("BLUEPRINT_COPY"), function() run(function() library.duplicate(id) end, _("BLUEPRINT_COPIED")) end),
-                textButton(_("BLUEPRINT_DELETE"), function() deleting:set(id); editing:set(nil) end),
-                textButton(_("BLUEPRINT_REVEAL"), function() reveal(library.resourceName(id)) end),
+                textButton(gettext("BLUEPRINT_RENAME"), function() editing:set(id); draft:set(snapshot.name); deleting:set(nil) end),
+                textButton(gettext("BLUEPRINT_COPY"), function() run(function() library.duplicate(id) end, gettext("BLUEPRINT_COPIED")) end),
+                textButton(gettext("BLUEPRINT_DELETE"), function() deleting:set(id); editing:set(nil) end),
+                textButton(gettext("BLUEPRINT_REVEAL"), function() reveal(library.resourceName(id)) end),
             }
         end
-        rows[#rows + 1] = builtin.BoxLayout {
-            meta = {localKey = "template-row-" .. tostring(id)},
+        local rowMeta = sized(850, 90)
+        rowMeta.localKey = "template-row-" .. tostring(id)
+        local columns = builtin.BoxLayout {
             orientation = builtin.type.Orientation.Horizontal,
             children = {
                 builtin.ImageView {
@@ -112,23 +114,24 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                         },
                     },
                 },
-                builtin.Component {
-                    meta = sized(280, 90),
-                    layout = builtin.FloatingLayout {children = {
-                        builtin.FloatingLayoutChild {
-                            h = 1, v = 0.5,
-                            item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
-                        },
-                    }},
-                },
             },
+        }
+        rows[#rows + 1] = builtin.Component {
+            meta = rowMeta,
+            layout = builtin.FloatingLayout {children = {
+                builtin.FloatingLayoutChild {h = 0, v = 0.5, item = columns},
+                builtin.FloatingLayoutChild {
+                    h = 1, v = 0.5,
+                    item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
+                },
+            }},
         }
     end
     if #rows == 0 then
-        rows[1] = builtin.TextView {text = query:old() == "" and _("BLUEPRINT_EMPTY_LIBRARY") or _("BLUEPRINT_NO_MATCHES")}
+        rows[1] = builtin.TextView {text = query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES")}
     end
     return builtin.Window {
-        id = windowId, title = _("BLUEPRINT_MANAGER_TITLE"),
+        id = windowId, title = gettext("BLUEPRINT_MANAGER_TITLE"),
         initialVisible = true, closable = true, movable = true,
         onClose = close,
         content = builtin.BoxLayout {
@@ -136,12 +139,20 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             children = {
                 builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
                     builtin.TextInputField {
-                        meta = sized(850, 34), value = query:old(), placeholderText = _("BLUEPRINT_SEARCH"),
+                        meta = sized(850, 34), value = query:old(), placeholderText = gettext("BLUEPRINT_SEARCH"),
                         onTyping = function(value) query:set(value) end,
                         onValueChange = function(value) query:set(value) end,
                         onCancel = function() query:set("") end,
                     },
-                    builtin.TextView {text = tr("BLUEPRINT_COUNT", {count = #templates})},
+                    builtin.Component {
+                        meta = sized(850, 24),
+                        layout = builtin.FloatingLayout {children = {
+                            builtin.FloatingLayoutChild {
+                                h = 1, v = 0.5,
+                                item = builtin.TextView {text = tr("BLUEPRINT_COUNT", {count = #templates})},
+                            },
+                        }},
+                    },
                 }},
                 builtin.ScrollArea {
                     meta = sized(850, 440),
@@ -159,7 +170,7 @@ end)
 
 local function open(context)
         gameCtx = context or gameCtx
-        assert(gameCtx and gameCtx.windowContainer, _("BLUEPRINT_NO_WINDOW_CONTEXT"))
+        assert(gameCtx and gameCtx.windowContainer, gettext("BLUEPRINT_NO_WINDOW_CONTEXT"))
         local windowApi = gameCtx.windowContainer:get():getApi()
         windowApi.addSingletonWindow(ManagerWindow, {})
         api.gui.byId.setVisible(windowId, true)
@@ -215,7 +226,7 @@ return {
                     meta = {mouseTransparent = true},
                     orientation = builtin.type.Orientation.Horizontal,
                     children = {
-                        originalButton {content = builtin.TextView {text = _("BLUEPRINT_MANAGER")}, onClick = function() open() end},
+                        originalButton {content = builtin.TextView {text = gettext("BLUEPRINT_MANAGER")}, onClick = function() open() end},
                         builtin.Component {meta = spacerMeta, layout = builtin.BoxLayout {children = {}}},
                     },
                 },

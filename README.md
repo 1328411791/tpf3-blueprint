@@ -50,6 +50,8 @@
 
 ## 文件用途
 
+多语言文本位于根目录 `strings.json`，目前提供简体中文和英文；添加语言及占位符规则见 [TRANSLATING.md](TRANSLATING.md)。界面随游戏语言加载，用户保存的模板名称保留原文。
+
 - `mod.json`：技术标识。
 - `_metadata/modinfo.json`：Mod Hub 中的名称、描述。
 - `content/templates/warehouse_pair.metacon.tl`：原生菜单卡片与建造脚本引用。

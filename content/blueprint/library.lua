@@ -1,3 +1,4 @@
+local gettext = _
 local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local core = require "blueprint_demo::/blueprint/core.lua"
 local runtime = require "blueprint_demo::/blueprint/runtime.lua"
@@ -55,16 +56,16 @@ end
 local function commit(candidate, selectedId)
     app.saveUserdata(directory, file, persistence.encode(candidate))
     local readback = persistence.decode(app.loadUserdata(directory, file))
-    assert(core.equal(readback, candidate), _("BLUEPRINT_WRITE_VERIFY"))
+    assert(core.equal(readback, candidate), gettext("BLUEPRINT_WRITE_VERIFY"))
     state, lastSaved, retryTicks = readback, selectedId, 0
 end
 
 function library.save(entity)
     library.ensureLoaded()
     assert(api.res.metaConstructionRep.find(library.carrier) >= 0,
-        _("BLUEPRINT_RELOAD_CARRIER"))
+        gettext("BLUEPRINT_RELOAD_CARRIER"))
     local shared = runtime.readState()
-    assert(shared and shared.ready, _("BLUEPRINT_ENGINE_NOT_READY"))
+    assert(shared and shared.ready, gettext("BLUEPRINT_ENGINE_NOT_READY"))
     local snapshot = core.capture(entity, state.nextId, api.engine, api.type.ComponentType, api.res,
         api.type.enum.TransportMode)
     local candidate = core.copy(state)
@@ -79,7 +80,7 @@ local function find(id, candidate)
     for index, snapshot in ipairs(candidate.templates) do
         if snapshot.id == id then return index, snapshot end
     end
-    error(_("BLUEPRINT_NOT_FOUND"))
+    error(gettext("BLUEPRINT_NOT_FOUND"))
 end
 
 function library.list(query)
@@ -96,9 +97,9 @@ end
 
 function library.rename(id, name)
     library.ensureLoaded()
-    assert(type(name) == "string", _("BLUEPRINT_ENTER_NAME"))
+    assert(type(name) == "string", gettext("BLUEPRINT_ENTER_NAME"))
     name = name:match("^%s*(.-)%s*$")
-    assert(#name > 0 and #name <= 384, _("BLUEPRINT_NAME_LENGTH"))
+    assert(#name > 0 and #name <= 384, gettext("BLUEPRINT_NAME_LENGTH"))
     local candidate = core.copy(state)
     local _, snapshot = find(id, candidate)
     snapshot.name = name
@@ -149,7 +150,7 @@ function library.decorateDefinitions(definitions, getAttributes)
             definition.blueprintPayload = transport.encode(core.toTemplate(snapshot, api.res))
             definition.costsYearProgression = false
             definition.name = snapshot.name
-            definition.description = _("BLUEPRINT_SAVED_DESCRIPTION")
+            definition.description = gettext("BLUEPRINT_SAVED_DESCRIPTION")
             definition.icon = {icon = snapshot.icon ~= "" and snapshot.icon or "::/warehouses/icons/wh_goods.tga"}
             definition.previewIcon = {icon = snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga"}
             definition.metadata = source.metadata
@@ -178,7 +179,7 @@ function library.getRevision() return revision end
 function library.applyBuilderPayload(definition, action)
     if not definition or not definition.blueprintPayload then return action end
     local builder = action.constructionActionParams and action.constructionActionParams.constructionBuilder
-    assert(builder, _("BLUEPRINT_NO_BUILDER"))
+    assert(builder, gettext("BLUEPRINT_NO_BUILDER"))
     builder.constructions = {library.carrier}
     builder.constructionTemplate = -1
     builder.params = core.copy(definition.blueprintPayload)

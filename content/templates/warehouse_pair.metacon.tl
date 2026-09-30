@@ -1,10 +1,11 @@
+local gettext = _
 -- 最小研究示例：给原生建造菜单增加一张模板卡片。
 -- 采用本机仓库使用的 .metacon.tl 格式，直接返回元建筑描述。
 return {
     availability = { yearFrom = 1900, yearTo = 0 },
     description = {
-        name = _("BLUEPRINT_DEMO_NAME"),
-        description = _("BLUEPRINT_DEMO_DESCRIPTION"),
+        name = gettext("BLUEPRINT_DEMO_NAME"),
+        description = gettext("BLUEPRINT_DEMO_DESCRIPTION"),
         icon = "::/warehouses/icons/wh_goods.tga",
         previewIcon = "::/warehouses/icons/wh_goods_preview.tga",
     },

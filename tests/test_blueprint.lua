@@ -719,5 +719,35 @@ test("manager opens independently without replacing native UI and renders search
     rowControls(renderRows()[countBefore + 1])[2].params.onClick()
     assert(#library.list() == countBefore)
     for _, saved in ipairs(library.list()) do assert(saved.id ~= copiedId) end
+    -- 切换语言并重新加载管理器，验证真实界面调用点和已保存名称。
+    testLanguage = "en"
+    modules["blueprint_demo::/blueprint/manager.lua"] = nil
+    states, cursor = {}, 0
+    local englishManager = require "blueprint_demo::/blueprint/manager.lua"
+    englishManager.open(context)
+    local englishWindow = windowRecipe({})
+    assert(englishWindow.params.title == "Template Manager · Blueprint Menu Demo")
+    local englishChildren = englishWindow.params.content.params.children
+    assert(englishChildren[1].params.children[1].params.placeholderText == "Search template names…")
+    local englishRows = englishChildren[2].params.content.params.layout.params.children
+    assert(englishRows[1].params.children[2].params.layout.params.children[1].params.text == library.list()[1].name)
+    assert(rowControls(englishRows[1])[1].params.content.params.text == "Rename")
+    assert(englishRows[1].params.children[2].params.layout.params.children[2].params.text:find("modules", 1, true))
+    testLanguage = "zh_CN"
+end)
+test("translations reorder named values, preserve user text and fall back to English", function()
+    local tr = require "blueprint_demo::/blueprint/i18n.lua"
+    testLanguage = "en"
+    assert(tr("BLUEPRINT_DEFAULT_NAME", {name = "车站 100% {name}", id = 7}) == "车站 100% {name} · Template 7")
+    rejects(function() core.validate({}) end, "Unsupported template format")
+    testLanguage = "fr"
+    assert(tr("BLUEPRINT_COUNT", {count = 3}) == "3 templates")
+    testLanguage = "test"
+    TRANSLATIONS.test = {BLUEPRINT_DEFAULT_NAME = "{id}: {name}"}
+    assert(tr("BLUEPRINT_DEFAULT_NAME", {name = "玩家命名", id = 7}) == "7: 玩家命名")
+    assert(_("UNKNOWN_TRANSLATION") == "UNKNOWN_TRANSLATION")
+    TRANSLATIONS.test = nil
+    testLanguage = "zh_CN"
+    assert(tr("BLUEPRINT_COUNT", {count = 3}) == "3 个模板")
 end)
 print(tostring(passed) .. " Lua contract tests passed")

@@ -59,7 +59,7 @@
     "BLUEPRINT_DELETE_YES": "Confirm deletion",
     "BLUEPRINT_DELETED": "Template deleted; synchronizing the menu",
     "BLUEPRINT_RENAME": "Rename",
-    "BLUEPRINT_COPY": "Duplicate",
+    "BLUEPRINT_COPY": "Copy",
     "BLUEPRINT_COPIED": "Template duplicated; synchronizing the menu",
     "BLUEPRINT_DELETE": "Delete",
     "BLUEPRINT_REVEAL": "Show in menu",
@@ -98,7 +98,8 @@
     "BLUEPRINT_TRANSFER_TAG": "Invalid template configuration type",
     "BLUEPRINT_TRANSFER_KEY": "Invalid template configuration key",
     "BLUEPRINT_DEMO_NAME": "Blueprint Demo: Warehouse Pair",
-    "BLUEPRINT_DEMO_DESCRIPTION": "Place two vanilla goods warehouses. Development prototype."
+    "BLUEPRINT_DEMO_DESCRIPTION": "Place two vanilla goods warehouses. Development prototype.",
+    "BLUEPRINT_MISSING_PLACEHOLDER": "Missing translation placeholder: "
   },
   "zh_CN": {
     "BLUEPRINT_INVALID_NUMBER": "参数包含无效数字",
@@ -199,6 +200,7 @@
     "BLUEPRINT_TRANSFER_TAG": "模板配置类型无效",
     "BLUEPRINT_TRANSFER_KEY": "模板配置键无效",
     "BLUEPRINT_DEMO_NAME": "Blueprint Demo: Warehouse Pair",
-    "BLUEPRINT_DEMO_DESCRIPTION": "放置两座原版货物仓库。开发原型。"
+    "BLUEPRINT_DEMO_DESCRIPTION": "放置两座原版货物仓库。开发原型。",
+    "BLUEPRINT_MISSING_PLACEHOLDER": "缺少翻译占位符："
   }
 }

@@ -1,9 +1,10 @@
+local gettext = _
 -- 载入时注册的固定载体。菜单包装器将其替换为已同步的模板卡片。
 return {
     availability = {yearFrom = 0, yearTo = 0},
     description = {
-        name = _("BLUEPRINT_CARRIER_NAME"),
-        description = _("BLUEPRINT_CARRIER_DESCRIPTION"),
+        name = gettext("BLUEPRINT_CARRIER_NAME"),
+        description = gettext("BLUEPRINT_CARRIER_DESCRIPTION"),
         icon = "::/warehouses/icons/wh_goods.tga",
         previewIcon = "::/warehouses/icons/wh_goods_preview.tga",
     },

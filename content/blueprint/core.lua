@@ -1,3 +1,4 @@
+local gettext = _
 local tr = require "blueprint_demo::/blueprint/i18n.lua"
 -- 只保存建筑输入数据；不复制实体 ID、库存、线路或世界坐标。
 local core = {}
@@ -6,16 +7,16 @@ function core.copy(value, seen, depth)
     local kind = type(value)
     if kind == "nil" or kind == "string" or kind == "boolean" then return value end
     if kind == "number" then
-        assert(value == value and value ~= math.huge and value ~= -math.huge, _("BLUEPRINT_INVALID_NUMBER"))
+        assert(value == value and value ~= math.huge and value ~= -math.huge, gettext("BLUEPRINT_INVALID_NUMBER"))
         return value
     end
     assert(kind == "table", tr("BLUEPRINT_UNSUPPORTED_VALUE", {type = kind}))
     seen, depth = seen or {}, depth or 0
-    assert(depth < 32 and not seen[value], _("BLUEPRINT_PARAM_DEPTH"))
+    assert(depth < 32 and not seen[value], gettext("BLUEPRINT_PARAM_DEPTH"))
     seen[value] = true
     local result = {}
     for key, child in pairs(value) do
-        assert(type(key) == "string" or type(key) == "number", _("BLUEPRINT_PARAM_KEY"))
+        assert(type(key) == "string" or type(key) == "number", gettext("BLUEPRINT_PARAM_KEY"))
         result[core.copy(key)] = core.copy(child, seen, depth + 1)
     end
     seen[value] = nil
@@ -37,9 +38,9 @@ local function resourceName(rep, value, context)
         value = value.fileName or value.name
     end
     local id = type(value) == "number" and value or (type(value) == "string" and rep.find(value))
-    assert(type(id) == "number" and id >= 0, tr("BLUEPRINT_RESOURCE_UNKNOWN", {context = context or _("BLUEPRINT_BUILDING_OR_MODULE"), value = value}))
+    assert(type(id) == "number" and id >= 0, tr("BLUEPRINT_RESOURCE_UNKNOWN", {context = context or gettext("BLUEPRINT_BUILDING_OR_MODULE"), value = tostring(value)}))
     local name = rep.getName(id)
-    assert(type(name) == "string" and name:find("::", 1, true), tr("BLUEPRINT_RESOURCE_PATH", {name = name}))
+    assert(type(name) == "string" and name:find("::", 1, true), tr("BLUEPRINT_RESOURCE_PATH", {name = tostring(name)}))
     return name
 end
 
@@ -47,32 +48,32 @@ function core.normalizeModules(modules, rep)
     local result = {}
     for slot, module in pairs(modules or {}) do
         local slotId = tonumber(slot)
-        assert(slotId and slotId % 1 == 0 and slotId >= 0, _("BLUEPRINT_INVALID_MODULE_SLOT"))
+        assert(slotId and slotId % 1 == 0 and slotId >= 0, gettext("BLUEPRINT_INVALID_MODULE_SLOT"))
         result[slotId] = resourceName(rep, module, tr("BLUEPRINT_MODULE_SLOT", {slot = slotId}))
     end
     return result
 end
 
 function core.validate(snapshot)
-    assert(type(snapshot) == "table" and snapshot.version == 1, _("BLUEPRINT_SNAPSHOT_VERSION"))
-    assert(type(snapshot.id) == "number" and snapshot.id >= 1 and snapshot.id % 1 == 0, _("BLUEPRINT_INVALID_ID"))
-    assert(type(snapshot.name) == "string" and #snapshot.name > 0, _("BLUEPRINT_EMPTY_NAME"))
-    assert(type(snapshot.constructionFileName) == "string" and snapshot.constructionFileName:find("::", 1, true), _("BLUEPRINT_BUILDING_PATH"))
-    assert(type(snapshot.params) == "table" and type(snapshot.modules) == "table", _("BLUEPRINT_MISSING_PARAMS"))
-    assert(snapshot.params.modules == nil and snapshot.params.tagToCargoType == nil, _("BLUEPRINT_UNNORMALIZED"))
-    assert(type(snapshot.cargoByTag or {}) == "table", _("BLUEPRINT_CARGO_CONFIG"))
+    assert(type(snapshot) == "table" and snapshot.version == 1, gettext("BLUEPRINT_SNAPSHOT_VERSION"))
+    assert(type(snapshot.id) == "number" and snapshot.id >= 1 and snapshot.id % 1 == 0, gettext("BLUEPRINT_INVALID_ID"))
+    assert(type(snapshot.name) == "string" and #snapshot.name > 0, gettext("BLUEPRINT_EMPTY_NAME"))
+    assert(type(snapshot.constructionFileName) == "string" and snapshot.constructionFileName:find("::", 1, true), gettext("BLUEPRINT_BUILDING_PATH"))
+    assert(type(snapshot.params) == "table" and type(snapshot.modules) == "table", gettext("BLUEPRINT_MISSING_PARAMS"))
+    assert(snapshot.params.modules == nil and snapshot.params.tagToCargoType == nil, gettext("BLUEPRINT_UNNORMALIZED"))
+    assert(type(snapshot.cargoByTag or {}) == "table", gettext("BLUEPRINT_CARGO_CONFIG"))
     for _, name in pairs(snapshot.cargoByTag or {}) do
-        assert(type(name) == "string" and name:find("::", 1, true), _("BLUEPRINT_CARGO_PATH"))
+        assert(type(name) == "string" and name:find("::", 1, true), gettext("BLUEPRINT_CARGO_PATH"))
     end
     for slot, name in pairs(snapshot.modules) do
-        assert(type(slot) == "number" and slot % 1 == 0 and slot >= 0, _("BLUEPRINT_INVALID_MODULE_SLOT"))
-        assert(type(name) == "string" and name:find("::", 1, true), _("BLUEPRINT_MODULE_PATH"))
+        assert(type(slot) == "number" and slot % 1 == 0 and slot >= 0, gettext("BLUEPRINT_INVALID_MODULE_SLOT"))
+        assert(type(name) == "string" and name:find("::", 1, true), gettext("BLUEPRINT_MODULE_PATH"))
     end
-    assert(type(snapshot.categories) == "table" and #snapshot.categories > 0, _("BLUEPRINT_MISSING_CATEGORY"))
+    assert(type(snapshot.categories) == "table" and #snapshot.categories > 0, gettext("BLUEPRINT_MISSING_CATEGORY"))
     for _, category in ipairs(snapshot.categories) do
-        assert(type(category) == "string" and #category > 0, _("BLUEPRINT_INVALID_CATEGORY"))
+        assert(type(category) == "string" and #category > 0, gettext("BLUEPRINT_INVALID_CATEGORY"))
     end
-    assert(type(snapshot.icon) == "string" and type(snapshot.previewIcon) == "string", _("BLUEPRINT_INVALID_ICON"))
+    assert(type(snapshot.icon) == "string" and type(snapshot.previewIcon) == "string", gettext("BLUEPRINT_INVALID_ICON"))
     core.copy(snapshot)
     return snapshot
 end
@@ -103,7 +104,7 @@ function core.resolveConstruction(entity, engine, types)
         for _, station in pairs(group.stations or {}) do
             local candidate = connector.getConstructionEntityForStation(station)
             if candidate and engine.entityExists(candidate) then
-                if root and root ~= candidate then return nil, _("BLUEPRINT_MULTIPLE_BUILDINGS") end
+                if root and root ~= candidate then return nil, gettext("BLUEPRINT_MULTIPLE_BUILDINGS") end
                 root = candidate
             end
         end
@@ -172,15 +173,15 @@ end
 
 function core.capture(entity, id, engine, types, res, transportModes)
     local root, reason = core.resolveConstruction(entity, engine, types)
-    assert(root, reason or _("BLUEPRINT_SELECT_BUILDING"))
+    assert(root, reason or gettext("BLUEPRINT_SELECT_BUILDING"))
     local con = engine.getComponent(root, types.CONSTRUCTION)
     assert(con and #(con.industries or {}) == 0 and #(con.townBuildings or {}) == 0,
-        _("BLUEPRINT_PLAYER_BUILDINGS_ONLY"))
+        gettext("BLUEPRINT_PLAYER_BUILDINGS_ONLY"))
     local owner = engine.getComponent(root, types.PLAYER_OWNED)
-    assert(owner and owner.player == engine.util.getPlayer(), _("BLUEPRINT_OWN_BUILDINGS_ONLY"))
-    local fileName = resourceName(res.constructionRep, con.fileName, _("BLUEPRINT_BUILDING"))
+    assert(owner and owner.player == engine.util.getPlayer(), gettext("BLUEPRINT_OWN_BUILDINGS_ONLY"))
+    local fileName = resourceName(res.constructionRep, con.fileName, gettext("BLUEPRINT_BUILDING"))
     local desc = res.constructionRep.get(res.constructionRep.find(fileName))
-    assert(not desc.edgeObject, _("BLUEPRINT_EDGE_OBJECT"))
+    assert(not desc.edgeObject, gettext("BLUEPRINT_EDGE_OBJECT"))
     local rawParams = con.params_native and con.params_native:asTable() or con.params
     local modules = core.normalizeModules(rawParams.modules, res.moduleRep)
     local params = {}
@@ -194,10 +195,10 @@ function core.capture(entity, id, engine, types, res, transportModes)
     end
     params.tagToCargoType = nil
     local categories = core.menuCategories(desc, fileName, con, engine, types, transportModes)
-    assert(#categories > 0, _("BLUEPRINT_UNKNOWN_TRANSPORT"))
+    assert(#categories > 0, gettext("BLUEPRINT_UNKNOWN_TRANSPORT"))
     local description = desc.description or {}
     local named = engine.getComponent(root, types.NAME)
-    local name = named and named.name or description.name or _("BLUEPRINT_BUILDING")
+    local name = named and named.name or description.name or gettext("BLUEPRINT_BUILDING")
     return core.validate({
         version = 1, id = id, name = tr("BLUEPRINT_DEFAULT_NAME", {name = name, id = id}),
         constructionFileName = fileName, params = params, modules = modules,
