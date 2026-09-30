@@ -133,9 +133,9 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         content = builtin.BoxLayout {
             orientation = builtin.type.Orientation.Vertical,
             children = {
-                builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
+                builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
                     builtin.TextInputField {
-                        meta = sized(740, 34), value = query:old(), placeholderText = "搜索模板名称…",
+                        meta = sized(850, 34), value = query:old(), placeholderText = "搜索模板名称…",
                         onTyping = function(value) query:set(value) end,
                         onValueChange = function(value) query:set(value) end,
                         onCancel = function() query:set("") end,
