@@ -1,0 +1,9 @@
+{
+  "name": "Blueprint Menu Demo",
+  "summary": "Development example: place two vanilla goods warehouses from the construction menu.",
+  "description": "Research prototype. Adds one menu card to Rail Buildings and Warehouses. It uses vanilla construction resources. This package has not been tested in the game.",
+  "authors": [{ "name": "lihanyu", "role": "CREATOR" }],
+  "tags": ["Warehouse"],
+  "dependencies": [],
+  "url": ""
+}

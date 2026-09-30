@@ -1,0 +1,8 @@
+{
+  "modId": "blueprint_demo",
+  "revision": 1,
+  "severityAdd": "None",
+  "severityRemove": "Warning",
+  "visible": true,
+  "cosmetic": false
+}
