@@ -590,6 +590,30 @@ test("template management searches and renames only the selected template", func
     for index = 2, #originals do assert(core.equal(library.list()[index], originals[index])) end
     acknowledge()
 end)
+test("descriptions persist, reload, copy and clear without changing other templates", function()
+    local previous = library.list()
+    local id = previous[1].id
+    local description = "货运站 <测试> & 模块\n第二行 " .. string.rep("长描述", 100)
+    library.updateMetadata(id, previous[1].name, description)
+    assert(disk.templates[1].description == description)
+    local restored = require("blueprint_demo::/blueprint/persistence.lua").decode(
+        require("blueprint_demo::/blueprint/persistence.lua").encode(disk))
+    assert(restored.templates[1].description == description)
+    for index = 2, #previous do assert(core.equal(library.list()[index], previous[index])) end
+    local duplicate = library.duplicate(id)
+    assert(duplicate.description == description)
+    library.delete(duplicate.id)
+    local beforeFailure = library.list()
+    failWrite = true
+    rejects(function() library.updateMetadata(id, "不会保存", "错误更新") end, "disk failure")
+    failWrite = false
+    assert(core.equal(beforeFailure, library.list()))
+    rejects(function() library.updateMetadata(id, previous[1].name, {}) end, "描述")
+    rejects(function() library.updateMetadata(id, previous[1].name, string.rep("x", 4097)) end, "描述")
+    library.updateMetadata(id, previous[1].name, "")
+    assert(library.list()[1].description == "")
+    acknowledge()
+end)
 test("copy and deletion preserve monotonic IDs and other template contents", function()
     local originals = library.list()
     local nextId = disk.nextId
@@ -702,11 +726,16 @@ test("manager opens independently without replacing native UI and renders search
         return row.params.children[3].params.layout.params.children[1].params.item.params.children
     end
     local firstId = library.list()[1].id
+    assert(#rowControls(renderRows()[1]) == 3)
+    assert(rowColumns(renderRows()[1])[2].params.layout.params.children[2].kind == "RichTextView")
     rowControls(renderRows()[1])[1].params.onClick()
     local editControls = rowControls(renderRows()[1])
     rowColumns(renderRows()[1])[2].params.layout.params.children[1].params.onTyping("管理窗口修改")
+    rowColumns(renderRows()[1])[2].params.layout.params.children[2].params.onTyping("货运 <站> & 换行\n描述")
     editControls[1].params.onClick()
     assert(library.list("管理窗口修改")[1].id == firstId)
+    assert(library.list("管理窗口修改")[1].description == "货运 <站> & 换行\n描述")
+    assert(rowColumns(renderRows()[1])[2].params.layout.params.children[2].params.text == "货运 &lt;站&gt; &amp; 换行<br>描述")
     local countBefore = #library.list()
     rowControls(renderRows()[1])[2].params.onClick()
     assert(#library.list() == countBefore + 1)
