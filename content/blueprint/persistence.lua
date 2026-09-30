@@ -10,7 +10,7 @@ end
 
 function persistence.decode(value)
     if type(value) == "table" and value.version == 2 then
-        assert(type(value.data) == "table", "模板库缺少编码数据")
+        assert(type(value.data) == "table", _("BLUEPRINT_MISSING_ENCODING"))
         return runtime.validateLibrary(transport.decode(value.data))
     end
     -- 读取旧版模板；下次成功保存时自动升级文件格式。

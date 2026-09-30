@@ -1,3 +1,4 @@
+local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local react = ug_require "::/gui/main/react.lua"
 local originalWindow = ug_require "::/gui/construction/construction.tl"
 local library = require "blueprint_demo::/blueprint/library.lua"
@@ -41,7 +42,7 @@ local RefreshableWindow = react.RegisterWrapperRecipe("BlueprintConstructionWind
     local pending = react.useRef(nil)
     local ticks = react.useRef(0)
     local ok, err = pcall(library.ensureLoaded)
-    if not ok then debugPrint("[Blueprint] 模板库加载失败: " .. tostring(err)) end
+    if not ok then debugPrint("[Blueprint] " .. tr("BLUEPRINT_LIBRARY_LOAD_FAILED", {error = err})) end
 
     react.onEvent("blueprintLibraryChanged", function(_name, event)
         pending:set(event.resName)
@@ -58,7 +59,7 @@ local RefreshableWindow = react.RegisterWrapperRecipe("BlueprintConstructionWind
         if not success then
             local message = tostring(failure)
             if message ~= lastSyncError then
-                debugPrint("[Blueprint] 模板同步失败: " .. message)
+                debugPrint("[Blueprint] " .. tr("BLUEPRINT_SYNC_FAILED", {error = message}))
                 lastSyncError = message
             end
         else

@@ -15,7 +15,7 @@ local function serialize(value)
         end
         return (kind == "number" and "n" or "s") .. tostring(#text) .. ":" .. text
     end
-    assert(kind == "table", "模板包含不可传输的数据")
+    assert(kind == "table", _("BLUEPRINT_TRANSFER_TYPE"))
     local keys = {}
     for key in pairs(value) do keys[#keys + 1] = key end
     table.sort(keys, function(a, b)
@@ -32,7 +32,7 @@ end
 
 function transport.encode(template)
     local text = serialize(core.copy(template))
-    assert(#text <= limit, "模板配置过大，无法传输")
+    assert(#text <= limit, _("BLUEPRINT_TRANSFER_SIZE"))
     local params = {blueprintBytes = #text}
     for offset = 1, #text, 3 do
         local a, b, c = text:byte(offset, offset + 2)
@@ -43,25 +43,25 @@ end
 
 function transport.decode(params)
     local size = params.blueprintBytes
-    assert(type(size) == "number" and size >= 1 and size <= limit and size % 1 == 0, "缺少有效的模板配置数据")
+    assert(type(size) == "number" and size >= 1 and size <= limit and size % 1 == 0, _("BLUEPRINT_TRANSFER_MISSING"))
     local chunks = {}
     for index = 1, math.ceil(size / 3) do
         local word = params["blueprintWord" .. tostring(index)]
-        assert(type(word) == "number" and word >= 0 and word <= 16777215 and word % 1 == 0, "模板配置数据不完整")
+        assert(type(word) == "number" and word >= 0 and word <= 16777215 and word % 1 == 0, _("BLUEPRINT_TRANSFER_INCOMPLETE"))
         chunks[index] = string.char(math.floor(word / 65536), math.floor(word / 256) % 256, word % 256)
     end
     local text, pos = table.concat(chunks):sub(1, size), 1
     local function count()
         local finish = text:find(":", pos, true)
-        assert(finish, "模板配置长度无效")
+        assert(finish, _("BLUEPRINT_TRANSFER_LENGTH"))
         local value = tonumber(text:sub(pos, finish - 1))
-        assert(value and value >= 0 and value % 1 == 0 and value <= size, "模板配置长度无效")
+        assert(value and value >= 0 and value % 1 == 0 and value <= size, _("BLUEPRINT_TRANSFER_LENGTH"))
         pos = finish + 1
         return value
     end
     local read
     read = function(depth)
-        assert(depth < 32 and pos <= size, "模板配置结构无效")
+        assert(depth < 32 and pos <= size, _("BLUEPRINT_TRANSFER_STRUCTURE"))
         local tag = text:sub(pos, pos)
         pos = pos + 1
         if tag == "z" then return nil end
@@ -69,25 +69,25 @@ function transport.decode(params)
         if tag == "x" then return false end
         if tag == "n" or tag == "s" then
             local length = count()
-            assert(pos + length - 1 <= size, "模板配置数据不完整")
+            assert(pos + length - 1 <= size, _("BLUEPRINT_TRANSFER_INCOMPLETE"))
             local value = text:sub(pos, pos + length - 1)
             pos = pos + length
             if tag == "s" then return value end
             value = tonumber(value)
-            assert(value and value == value and value ~= math.huge and value ~= -math.huge, "模板配置数字无效")
+            assert(value and value == value and value ~= math.huge and value ~= -math.huge, _("BLUEPRINT_TRANSFER_NUMBER"))
             return value
         end
-        assert(tag == "t", "模板配置类型无效")
+        assert(tag == "t", _("BLUEPRINT_TRANSFER_TAG"))
         local result, entries = {}, count()
         for _ = 1, entries do
             local key = read(depth + 1)
-            assert(type(key) == "string" or type(key) == "number", "模板配置键无效")
+            assert(type(key) == "string" or type(key) == "number", _("BLUEPRINT_TRANSFER_KEY"))
             result[key] = read(depth + 1)
         end
         return result
     end
     local template = read(0)
-    assert(pos == size + 1 and type(template) == "table", "模板配置结构无效")
+    assert(pos == size + 1 and type(template) == "table", _("BLUEPRINT_TRANSFER_STRUCTURE"))
     return core.copy(template)
 end
 return transport

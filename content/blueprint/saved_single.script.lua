@@ -6,7 +6,7 @@ function data()
             -- 配置由 GUI 完整传入；这里不访问 api、用户文件或共享 VM 状态。
             local template = transport.decode(params)
             assert(type(template.constructions) == "table" and #template.constructions == 1,
-                "缺少单座建筑模板配置")
+                _("BLUEPRINT_MISSING_SINGLE"))
             return template
         end,
     }

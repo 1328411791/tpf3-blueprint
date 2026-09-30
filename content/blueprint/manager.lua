@@ -1,3 +1,4 @@
+local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local react = ug_require "::/gui/main/react.lua"
 local builtin = ug_require "::/gui/main/builtin.lua"
 local styleutil = ug_require "::/gui/main/styleutil.tl"
@@ -21,8 +22,8 @@ local function reveal(resName)
     react.fireEvent(nil, "constructionMenuSelectTabForConstruction", {resName = resName})
 end
 local categoryLabels = {
-    rail_buildings = "铁路建筑", road_buildings = "道路建筑",
-    water_buildings = "水路建筑", air_buildings = "航空建筑", warehouses = "仓库",
+    rail_buildings = _("BLUEPRINT_RAIL_BUILDINGS"), road_buildings = _("BLUEPRINT_ROAD_BUILDINGS"),
+    water_buildings = _("BLUEPRINT_WATER_BUILDINGS"), air_buildings = _("BLUEPRINT_AIR_BUILDINGS"), warehouses = _("BLUEPRINT_WAREHOUSES"),
 }
 
 local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", builtin.Window, function(_params)
@@ -34,7 +35,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local change = react.useState(0)
     local function run(fn, success)
         local ok, failure = pcall(fn)
-        message:set(ok and success or ("操作失败：" .. tostring(failure)))
+        message:set(ok and success or (tr("BLUEPRINT_OP_FAILED", {error = failure})))
         if ok then
             editing:set(nil)
             deleting:set(nil)
@@ -50,7 +51,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     end)
     local ok, templates = pcall(library.list, query:old())
     local status = message:old()
-    if not ok then status = "模板库读取失败：" .. tostring(templates); templates = {} end
+    if not ok then status = tr("BLUEPRINT_LIBRARY_READ_FAILED", {error = templates}); templates = {} end
     local rows = {}
     for _, snapshot in ipairs(templates) do
         local id = snapshot.id
@@ -63,9 +64,9 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         local labels, count = {}, 0
         for _, category in ipairs(categories) do labels[#labels + 1] = categoryLabels[category] or category end
         for _ in pairs(snapshot.modules) do count = count + 1 end
-        local details = table.concat(labels, " / ") .. " · " .. tostring(count) .. " 个模块"
+        local details = tr("BLUEPRINT_DETAILS", {categories = table.concat(labels, " / "), count = count})
         local missing = core.missingResources(snapshot, api.res)
-        if #missing > 0 then details = details .. " · 缺少依赖，暂不可建造" end
+        if #missing > 0 then details = details .. _("BLUEPRINT_MISSING_DEPS") end
         local controls
         local nameContent = builtin.TextView {text = snapshot.name}
         if editing:old() == id then
@@ -75,21 +76,21 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                     onValueChange = function(value) draft:set(value) end,
             }
             controls = {
-                textButton("保存名称", function() run(function() library.rename(id, draft:old()) end, "名称已保存，菜单正在同步") end),
-                textButton("取消", function() editing:set(nil) end),
+                textButton(_("BLUEPRINT_SAVE_NAME"), function() run(function() library.rename(id, draft:old()) end, _("BLUEPRINT_NAME_SAVED")) end),
+                textButton(_("BLUEPRINT_CANCEL"), function() editing:set(nil) end),
             }
         elseif deleting:old() == id then
             controls = {
-                builtin.TextView {text = "删除此模板？"},
-                textButton("确认删除", function() run(function() library.delete(id) end, "模板已删除，菜单正在同步") end),
-                textButton("取消", function() deleting:set(nil) end),
+                builtin.TextView {text = _("BLUEPRINT_DELETE_CONFIRM")},
+                textButton(_("BLUEPRINT_DELETE_YES"), function() run(function() library.delete(id) end, _("BLUEPRINT_DELETED")) end),
+                textButton(_("BLUEPRINT_CANCEL"), function() deleting:set(nil) end),
             }
         else
             controls = {
-                textButton("重命名", function() editing:set(id); draft:set(snapshot.name); deleting:set(nil) end),
-                textButton("复制", function() run(function() library.duplicate(id) end, "模板副本已新增，菜单正在同步") end),
-                textButton("删除", function() deleting:set(id); editing:set(nil) end),
-                textButton("在菜单中查看", function() reveal(library.resourceName(id)) end),
+                textButton(_("BLUEPRINT_RENAME"), function() editing:set(id); draft:set(snapshot.name); deleting:set(nil) end),
+                textButton(_("BLUEPRINT_COPY"), function() run(function() library.duplicate(id) end, _("BLUEPRINT_COPIED")) end),
+                textButton(_("BLUEPRINT_DELETE"), function() deleting:set(id); editing:set(nil) end),
+                textButton(_("BLUEPRINT_REVEAL"), function() reveal(library.resourceName(id)) end),
             }
         end
         rows[#rows + 1] = builtin.BoxLayout {
@@ -124,10 +125,10 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         }
     end
     if #rows == 0 then
-        rows[1] = builtin.TextView {text = query:old() == "" and "尚未保存模板" or "没有匹配的模板"}
+        rows[1] = builtin.TextView {text = query:old() == "" and _("BLUEPRINT_EMPTY_LIBRARY") or _("BLUEPRINT_NO_MATCHES")}
     end
     return builtin.Window {
-        id = windowId, title = "模板管理 · Blueprint Menu Demo",
+        id = windowId, title = _("BLUEPRINT_MANAGER_TITLE"),
         initialVisible = true, closable = true, movable = true,
         onClose = close,
         content = builtin.BoxLayout {
@@ -135,12 +136,12 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             children = {
                 builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
                     builtin.TextInputField {
-                        meta = sized(850, 34), value = query:old(), placeholderText = "搜索模板名称…",
+                        meta = sized(850, 34), value = query:old(), placeholderText = _("BLUEPRINT_SEARCH"),
                         onTyping = function(value) query:set(value) end,
                         onValueChange = function(value) query:set(value) end,
                         onCancel = function() query:set("") end,
                     },
-                    builtin.TextView {text = tostring(#templates) .. " 个模板"},
+                    builtin.TextView {text = tr("BLUEPRINT_COUNT", {count = #templates})},
                 }},
                 builtin.ScrollArea {
                     meta = sized(850, 440),
@@ -158,7 +159,7 @@ end)
 
 local function open(context)
         gameCtx = context or gameCtx
-        assert(gameCtx and gameCtx.windowContainer, "模板管理缺少游戏窗口上下文")
+        assert(gameCtx and gameCtx.windowContainer, _("BLUEPRINT_NO_WINDOW_CONTEXT"))
         local windowApi = gameCtx.windowContainer:get():getApi()
         windowApi.addSingletonWindow(ManagerWindow, {})
         api.gui.byId.setVisible(windowId, true)
@@ -214,7 +215,7 @@ return {
                     meta = {mouseTransparent = true},
                     orientation = builtin.type.Orientation.Horizontal,
                     children = {
-                        originalButton {content = builtin.TextView {text = "模板管理"}, onClick = function() open() end},
+                        originalButton {content = builtin.TextView {text = _("BLUEPRINT_MANAGER")}, onClick = function() open() end},
                         builtin.Component {meta = spacerMeta, layout = builtin.BoxLayout {children = {}}},
                     },
                 },

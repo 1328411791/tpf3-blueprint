@@ -1,3 +1,4 @@
+local tr = require "blueprint_demo::/blueprint/i18n.lua"
 -- 只保存建筑输入数据；不复制实体 ID、库存、线路或世界坐标。
 local core = {}
 
@@ -5,16 +6,16 @@ function core.copy(value, seen, depth)
     local kind = type(value)
     if kind == "nil" or kind == "string" or kind == "boolean" then return value end
     if kind == "number" then
-        assert(value == value and value ~= math.huge and value ~= -math.huge, "参数包含无效数字")
+        assert(value == value and value ~= math.huge and value ~= -math.huge, _("BLUEPRINT_INVALID_NUMBER"))
         return value
     end
-    assert(kind == "table", "参数包含不能保存的 " .. kind)
+    assert(kind == "table", tr("BLUEPRINT_UNSUPPORTED_VALUE", {type = kind}))
     seen, depth = seen or {}, depth or 0
-    assert(depth < 32 and not seen[value], "参数嵌套过深或存在循环引用")
+    assert(depth < 32 and not seen[value], _("BLUEPRINT_PARAM_DEPTH"))
     seen[value] = true
     local result = {}
     for key, child in pairs(value) do
-        assert(type(key) == "string" or type(key) == "number", "参数键不能序列化")
+        assert(type(key) == "string" or type(key) == "number", _("BLUEPRINT_PARAM_KEY"))
         result[core.copy(key)] = core.copy(child, seen, depth + 1)
     end
     seen[value] = nil
@@ -36,9 +37,9 @@ local function resourceName(rep, value, context)
         value = value.fileName or value.name
     end
     local id = type(value) == "number" and value or (type(value) == "string" and rep.find(value))
-    assert(type(id) == "number" and id >= 0, "无法识别资源（" .. (context or "建筑或模块") .. "）: " .. tostring(value))
+    assert(type(id) == "number" and id >= 0, tr("BLUEPRINT_RESOURCE_UNKNOWN", {context = context or _("BLUEPRINT_BUILDING_OR_MODULE"), value = value}))
     local name = rep.getName(id)
-    assert(type(name) == "string" and name:find("::", 1, true), "资源没有完整的 Mod 路径: " .. tostring(name))
+    assert(type(name) == "string" and name:find("::", 1, true), tr("BLUEPRINT_RESOURCE_PATH", {name = name}))
     return name
 end
 
@@ -46,32 +47,32 @@ function core.normalizeModules(modules, rep)
     local result = {}
     for slot, module in pairs(modules or {}) do
         local slotId = tonumber(slot)
-        assert(slotId and slotId % 1 == 0 and slotId >= 0, "模块槽位无效")
-        result[slotId] = resourceName(rep, module, "模块槽位 " .. tostring(slotId))
+        assert(slotId and slotId % 1 == 0 and slotId >= 0, _("BLUEPRINT_INVALID_MODULE_SLOT"))
+        result[slotId] = resourceName(rep, module, tr("BLUEPRINT_MODULE_SLOT", {slot = slotId}))
     end
     return result
 end
 
 function core.validate(snapshot)
-    assert(type(snapshot) == "table" and snapshot.version == 1, "模板格式不受支持")
-    assert(type(snapshot.id) == "number" and snapshot.id >= 1 and snapshot.id % 1 == 0, "模板 ID 无效")
-    assert(type(snapshot.name) == "string" and #snapshot.name > 0, "模板名称为空")
-    assert(type(snapshot.constructionFileName) == "string" and snapshot.constructionFileName:find("::", 1, true), "建筑资源路径无效")
-    assert(type(snapshot.params) == "table" and type(snapshot.modules) == "table", "缺少建筑参数或模块")
-    assert(snapshot.params.modules == nil and snapshot.params.tagToCargoType == nil, "模板参数没有归一化")
-    assert(type(snapshot.cargoByTag or {}) == "table", "货种配置无效")
+    assert(type(snapshot) == "table" and snapshot.version == 1, _("BLUEPRINT_SNAPSHOT_VERSION"))
+    assert(type(snapshot.id) == "number" and snapshot.id >= 1 and snapshot.id % 1 == 0, _("BLUEPRINT_INVALID_ID"))
+    assert(type(snapshot.name) == "string" and #snapshot.name > 0, _("BLUEPRINT_EMPTY_NAME"))
+    assert(type(snapshot.constructionFileName) == "string" and snapshot.constructionFileName:find("::", 1, true), _("BLUEPRINT_BUILDING_PATH"))
+    assert(type(snapshot.params) == "table" and type(snapshot.modules) == "table", _("BLUEPRINT_MISSING_PARAMS"))
+    assert(snapshot.params.modules == nil and snapshot.params.tagToCargoType == nil, _("BLUEPRINT_UNNORMALIZED"))
+    assert(type(snapshot.cargoByTag or {}) == "table", _("BLUEPRINT_CARGO_CONFIG"))
     for _, name in pairs(snapshot.cargoByTag or {}) do
-        assert(type(name) == "string" and name:find("::", 1, true), "货种资源路径无效")
+        assert(type(name) == "string" and name:find("::", 1, true), _("BLUEPRINT_CARGO_PATH"))
     end
     for slot, name in pairs(snapshot.modules) do
-        assert(type(slot) == "number" and slot % 1 == 0 and slot >= 0, "模块槽位无效")
-        assert(type(name) == "string" and name:find("::", 1, true), "模块资源路径无效")
+        assert(type(slot) == "number" and slot % 1 == 0 and slot >= 0, _("BLUEPRINT_INVALID_MODULE_SLOT"))
+        assert(type(name) == "string" and name:find("::", 1, true), _("BLUEPRINT_MODULE_PATH"))
     end
-    assert(type(snapshot.categories) == "table" and #snapshot.categories > 0, "模板缺少菜单分类")
+    assert(type(snapshot.categories) == "table" and #snapshot.categories > 0, _("BLUEPRINT_MISSING_CATEGORY"))
     for _, category in ipairs(snapshot.categories) do
-        assert(type(category) == "string" and #category > 0, "菜单分类无效")
+        assert(type(category) == "string" and #category > 0, _("BLUEPRINT_INVALID_CATEGORY"))
     end
-    assert(type(snapshot.icon) == "string" and type(snapshot.previewIcon) == "string", "模板图标无效")
+    assert(type(snapshot.icon) == "string" and type(snapshot.previewIcon) == "string", _("BLUEPRINT_INVALID_ICON"))
     core.copy(snapshot)
     return snapshot
 end
@@ -102,7 +103,7 @@ function core.resolveConstruction(entity, engine, types)
         for _, station in pairs(group.stations or {}) do
             local candidate = connector.getConstructionEntityForStation(station)
             if candidate and engine.entityExists(candidate) then
-                if root and root ~= candidate then return nil, "该车站组包含多个建筑，请直接点击其中一座建筑" end
+                if root and root ~= candidate then return nil, _("BLUEPRINT_MULTIPLE_BUILDINGS") end
                 root = candidate
             end
         end
@@ -171,15 +172,15 @@ end
 
 function core.capture(entity, id, engine, types, res, transportModes)
     local root, reason = core.resolveConstruction(entity, engine, types)
-    assert(root, reason or "请点击单座车站、仓库或车库")
+    assert(root, reason or _("BLUEPRINT_SELECT_BUILDING"))
     local con = engine.getComponent(root, types.CONSTRUCTION)
     assert(con and #(con.industries or {}) == 0 and #(con.townBuildings or {}) == 0,
-        "本版支持玩家建筑，不支持工业和城市建筑")
+        _("BLUEPRINT_PLAYER_BUILDINGS_ONLY"))
     local owner = engine.getComponent(root, types.PLAYER_OWNED)
-    assert(owner and owner.player == engine.util.getPlayer(), "只能保存当前玩家拥有的建筑")
-    local fileName = resourceName(res.constructionRep, con.fileName, "建筑")
+    assert(owner and owner.player == engine.util.getPlayer(), _("BLUEPRINT_OWN_BUILDINGS_ONLY"))
+    local fileName = resourceName(res.constructionRep, con.fileName, _("BLUEPRINT_BUILDING"))
     local desc = res.constructionRep.get(res.constructionRep.find(fileName))
-    assert(not desc.edgeObject, "路边物件暂不支持，请选择独立建筑")
+    assert(not desc.edgeObject, _("BLUEPRINT_EDGE_OBJECT"))
     local rawParams = con.params_native and con.params_native:asTable() or con.params
     local modules = core.normalizeModules(rawParams.modules, res.moduleRep)
     local params = {}
@@ -189,16 +190,16 @@ function core.capture(entity, id, engine, types, res, transportModes)
     -- 库存货种在引擎中使用临时资源 ID；存储名称，放置时重新解析。
     local cargoByTag = {}
     for tag, cargo in pairs(params.tagToCargoType or {}) do
-        cargoByTag[tag] = resourceName(res.cargoTypeRep, cargo, "货种槽位 " .. tostring(tag))
+        cargoByTag[tag] = resourceName(res.cargoTypeRep, cargo, tr("BLUEPRINT_CARGO_SLOT", {slot = tag}))
     end
     params.tagToCargoType = nil
     local categories = core.menuCategories(desc, fileName, con, engine, types, transportModes)
-    assert(#categories > 0, "无法识别该建筑的交通类型或建造菜单分类")
+    assert(#categories > 0, _("BLUEPRINT_UNKNOWN_TRANSPORT"))
     local description = desc.description or {}
     local named = engine.getComponent(root, types.NAME)
-    local name = named and named.name or description.name or "建筑"
+    local name = named and named.name or description.name or _("BLUEPRINT_BUILDING")
     return core.validate({
-        version = 1, id = id, name = name .. " · 模板 " .. tostring(id),
+        version = 1, id = id, name = tr("BLUEPRINT_DEFAULT_NAME", {name = name, id = id}),
         constructionFileName = fileName, params = params, modules = modules,
         cargoByTag = cargoByTag, categories = categories,
         icon = description.icon or "::/warehouses/icons/wh_goods.tga",
@@ -221,7 +222,7 @@ end
 function core.toTemplate(snapshot, res)
     core.validate(snapshot)
     local missing = core.missingResources(snapshot, res)
-    assert(#missing == 0, "模板缺少资源: " .. table.concat(missing, ", "))
+    assert(#missing == 0, tr("BLUEPRINT_MISSING_RESOURCES", {resources = table.concat(missing, ", ")}))
     local params = core.copy(snapshot.params)
     if next(snapshot.cargoByTag or {}) then
         params.tagToCargoType = {}

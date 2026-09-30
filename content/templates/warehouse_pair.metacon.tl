@@ -3,8 +3,8 @@
 return {
     availability = { yearFrom = 1900, yearTo = 0 },
     description = {
-        name = "Blueprint Demo: Warehouse Pair",
-        description = "Place two vanilla goods warehouses. Development prototype.",
+        name = _("BLUEPRINT_DEMO_NAME"),
+        description = _("BLUEPRINT_DEMO_DESCRIPTION"),
         icon = "::/warehouses/icons/wh_goods.tga",
         previewIcon = "::/warehouses/icons/wh_goods_preview.tga",
     },
