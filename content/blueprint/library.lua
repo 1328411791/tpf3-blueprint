@@ -8,6 +8,7 @@ local library = {}
 local directory, file = "blueprint_demo", "library"
 local loaded, state, published = false, nil, nil
 local revision, retryTicks, lastSaved = 0, 0, nil
+local refreshTarget
 library.carrier = "blueprint_demo::/blueprint/saved_single.metacon"
 
 function library.resourceName(id)
@@ -38,8 +39,10 @@ function library.pollSync()
             debugPrint("[Blueprint] " .. tr("BLUEPRINT_LIBRARY_SYNCED", {count = #state.templates}))
             local event = {
                 resName = lastSaved and library.resourceName(lastSaved) or nil,
+                focusResName = refreshTarget,
             }
             lastSaved = nil
+            refreshTarget = nil
             return event
         end
         retryTicks = 0
@@ -53,11 +56,12 @@ function library.pollSync()
     retryTicks = (retryTicks + 1) % 60
 end
 
-local function commit(candidate, selectedId)
+local function commit(candidate, selectedId, focusResName)
     app.saveUserdata(directory, file, persistence.encode(candidate))
     local readback = persistence.decode(app.loadUserdata(directory, file))
     assert(core.equal(readback, candidate), gettext("BLUEPRINT_WRITE_VERIFY"))
     state, lastSaved, retryTicks = readback, selectedId, 0
+    refreshTarget = focusResName
 end
 
 function library.save(entity)
@@ -71,7 +75,7 @@ function library.save(entity)
     local candidate = core.copy(state)
     candidate.templates[#candidate.templates + 1] = snapshot
     candidate.nextId = candidate.nextId + 1
-    commit(candidate, snapshot.id)
+    commit(candidate, snapshot.id, "blueprint_demo::/blueprint/save_tool.res")
     debugPrint("[Blueprint] " .. tr("BLUEPRINT_SAVED_WAIT", {name = snapshot.name}))
     return snapshot, library.resourceName(snapshot.id)
 end
@@ -132,7 +136,7 @@ local function shallow(value)
     return result
 end
 
-function library.decorateDefinitions(definitions, getAttributes)
+function library.decorateDefinitions(definitions)
     local result, carrier = {}, nil
     for _, definition in ipairs(definitions) do
         if definition.resName == library.carrier then carrier = definition
@@ -147,18 +151,15 @@ function library.decorateDefinitions(definitions, getAttributes)
             -- 信息面板使用已计算的属性；建造器由 getActionParams 包装器设置载体。
             -- 避免原生信息面板再次用不含配置数据的默认参数调用载体。
             definition.constructions = {}
-            definition.blueprintPayload = transport.encode(core.toTemplate(snapshot, api.res))
+            definition.blueprintPayload = transport.encode(core.toTemplate(snapshot, api.res, api.engine.util.getYear()))
             definition.costsYearProgression = false
             definition.name = snapshot.name
             definition.description = gettext("BLUEPRINT_SAVED_DESCRIPTION")
-            definition.icon = {icon = snapshot.icon ~= "" and snapshot.icon or "::/warehouses/icons/wh_goods.tga"}
-            definition.previewIcon = {icon = snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga"}
+            local icon, preview = core.templateImages(snapshot)
+            definition.icon = {icon = icon}
+            definition.previewIcon = {icon = preview}
             definition.metadata = source.metadata
             definition.attributes = source.description and source.description.attributes or {}
-            if getAttributes then
-                local result = api.engine.util.construction.getConstructionResult(library.carrier, -1, definition.blueprintPayload)
-                if result then definition.attributes = getAttributes(result) or definition.attributes end
-            end
             definition.cargoTypeSet = source.description and source.description.cargoTypeSet
             definition.params = shallow(carrier.params)
             local categories = {}

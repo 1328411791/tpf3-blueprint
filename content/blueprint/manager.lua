@@ -67,9 +67,10 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         for _ in pairs(snapshot.modules) do count = count + 1 end
         local details = tr("BLUEPRINT_DETAILS", {categories = table.concat(labels, " / "), count = count})
         local missing = core.missingResources(snapshot, api.res)
+        local _, preview = core.templateImages(snapshot)
         if #missing > 0 then details = details .. gettext("BLUEPRINT_MISSING_DEPS") end
         local controls
-        local nameContent = builtin.TextView {text = snapshot.name}
+        local nameContent = builtin.TextView {meta = sized(400, 28), text = snapshot.name, tooltipWhenClipped = snapshot.name}
         if editing:old() == id then
             nameContent = builtin.TextInputField {
                     meta = sized(400, 32), value = draft:old(), maxLength = 128,
@@ -96,12 +97,14 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         end
         local rowMeta = sized(850, 90)
         rowMeta.localKey = "template-row-" .. tostring(id)
-        local columns = builtin.BoxLayout {
+        -- 用互不重叠的固定列分配整行宽度，按钮只在最右列内对齐。
+        rows[#rows + 1] = builtin.BoxLayout {
+            meta = rowMeta,
             orientation = builtin.type.Orientation.Horizontal,
             children = {
                 builtin.ImageView {
                     meta = sized(130, 90),
-                    path = sourceId >= 0 and snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga",
+                    path = sourceId >= 0 and preview or "::/warehouses/icons/wh_goods_preview.tga",
                     scaling = builtin.type.ImageViewScaling.AutoFit,
                 },
                 builtin.Component {
@@ -110,21 +113,20 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                         orientation = builtin.type.Orientation.Vertical,
                         children = {
                             nameContent,
-                            builtin.TextView {text = details},
+                            builtin.TextView {meta = sized(400, 28), text = details, tooltipWhenClipped = details},
                         },
                     },
                 },
-            },
-        }
-        rows[#rows + 1] = builtin.Component {
-            meta = rowMeta,
-            layout = builtin.FloatingLayout {children = {
-                builtin.FloatingLayoutChild {h = 0, v = 0.5, item = columns},
-                builtin.FloatingLayoutChild {
-                    h = 1, v = 0.5,
-                    item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
+                builtin.Component {
+                    meta = sized(300, 90),
+                    layout = builtin.FloatingLayout {children = {
+                        builtin.FloatingLayoutChild {
+                            h = 1, v = 0.5,
+                            item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
+                        },
+                    }},
                 },
-            }},
+            },
         }
     end
     if #rows == 0 then

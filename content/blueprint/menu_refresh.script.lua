@@ -3,7 +3,6 @@ local react = ug_require "::/gui/main/react.lua"
 local originalWindow = ug_require "::/gui/construction/construction.tl"
 local library = require "blueprint_demo::/blueprint/library.lua"
 local constructionUi = ug_require "::/gui/construction/construction_react_util.tl"
-local constructionDescUi = ug_require "::/gui/construction/construction_desc_react_util.tl"
 local lastSyncError
 local manager = require "blueprint_demo::/blueprint/manager.lua"
 local hookedContainers = setmetatable({}, {__mode = "k"})
@@ -45,7 +44,7 @@ local RefreshableWindow = react.RegisterWrapperRecipe("BlueprintConstructionWind
     if not ok then debugPrint("[Blueprint] " .. tr("BLUEPRINT_LIBRARY_LOAD_FAILED", {error = err})) end
 
     react.onEvent("blueprintLibraryChanged", function(_name, event)
-        pending:set(event.resName)
+        pending:set(event.focusResName)
         ticks:set(0)
         revision:set(library.getRevision())
         -- 与原生 propagateActionFn 一样，动作回调在工具栈未就绪时可以缺省。
@@ -87,7 +86,7 @@ function data()
         manager.install()
         local originalDefinitions = constructionUi.getConstructionDefinitions
         constructionUi.getConstructionDefinitions = function(...)
-            return library.decorateDefinitions(originalDefinitions(...), constructionDescUi.getAttributesFromConstructionResult)
+            return library.decorateDefinitions(originalDefinitions(...))
         end
         local originalActionParams = constructionUi.getActionParams
         constructionUi.getActionParams = function(definition, ...)

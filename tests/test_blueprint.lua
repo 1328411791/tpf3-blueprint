@@ -83,7 +83,7 @@ local entities = {
 api.engine = {
     getComponent = function(id, kind) return entities[id] and entities[id][kind] end,
     entityExists = function(id) return entities[id] ~= nil end,
-    util = {getPlayer = function() return 9 end},
+    util = {getPlayer = function() return 9 end, getYear = function() return 1950 end},
     system = {streetConnectorSystem = {
         getConstructionEntityForSubconstruction = function() return 10 end,
         getConstructionEntityForStation = function(id) return id == 24 and 10 or 20 end,
@@ -502,9 +502,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
         getActionParams = function() return {constructionActionParams = {constructionBuilder = {height = 3}}} end,
     }
     api.engine.util.construction = {getConstructionResult = function(name, index, params)
-        assert(name == library.carrier and index == -1)
-        assert(transport.decode(params).constructions[1])
-        return {attributes = {cost = {123, -1}}}
+        error("Menu refresh must not evaluate building scripts")
     end}
     function ug_require(name)
         if name:find("react.lua", 1, true) then return react end
@@ -541,7 +539,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     windowApi.addSingletonWindow(ordinaryWindow, {meta = {localKey = "ordinary-window"}})
     assert(#ui.getConstructionDefinitions() == #disk.templates)
     local card = ui.getConstructionDefinitions()[1]
-    assert(card.attributes.cost[1] == 123 and not card.costsYearProgression)
+    assert(type(card.attributes) == "table" and not card.costsYearProgression)
     local action = ui.getActionParams(card)
     assert(action.constructionActionParams.constructionBuilder.constructions[1] == library.carrier)
     assert(transport.decode(action.constructionActionParams.constructionBuilder.params).constructions[1])
@@ -552,7 +550,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     local cmd = commands[#commands]
     gameScript.handleEvent({}, engineState, cmd.src, cmd.id, cmd.name, cmd.param)
     for _ = 1, 4 do steps[1]() end
-    assert(cleared and sent.constructionMenuSelectTabForConstruction.resName == resource)
+    assert(cleared and sent.constructionMenuSelectTabForConstruction.resName == "blueprint_demo::/blueprint/save_tool.res")
     assert(installed(param) == 42 and calledParams.meta.localKey ~= keyBefore)
     assert(not oldMainRef.alive and mainRef.parameters and mainRef.parameters.owner == mainRef)
     assert(parameterRef.owner.alive and parameterKey == "blueprint-params-" .. tostring(library.getRevision()))
@@ -683,10 +681,14 @@ test("manager opens independently without replacing native UI and renders search
     assert(children[2].kind == "ScrollArea")
     assert(children[2].params.content.kind == "Component")
     local rows = children[2].params.content.params.layout.params.children
-    assert(#rows == #library.list() and rows[1].params.children[1].kind == "ImageView")
-    assert(#rows[1].params.children == 3)
-    assert(rows[1].params.children[2].params.layout.params.children[1].kind == "TextView")
-    assert(#children[1].params.children == 2 and children[1].params.children[2].kind == "TextView")
+    local function rowColumns(row)
+        return row.params.children
+    end
+    assert(#rows == #library.list() and rowColumns(rows[1])[1].kind == "ImageView")
+    assert(rowColumns(rows[1])[2].params.layout.params.children[1].kind == "TextView")
+    local countLine = children[1].params.children[2].params.layout.params.children[1].params
+    assert(countLine.h == 1 and countLine.item.kind == "TextView")
+    assert(rows[1].params.children[3].params.layout.params.children[1].params.h == 1)
     children[1].params.children[1].params.onTyping("没有这个模板")
     cursor = 0
     local empty = windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
@@ -702,7 +704,7 @@ test("manager opens independently without replacing native UI and renders search
     local firstId = library.list()[1].id
     rowControls(renderRows()[1])[1].params.onClick()
     local editControls = rowControls(renderRows()[1])
-    renderRows()[1].params.children[2].params.layout.params.children[1].params.onTyping("管理窗口修改")
+    rowColumns(renderRows()[1])[2].params.layout.params.children[1].params.onTyping("管理窗口修改")
     editControls[1].params.onClick()
     assert(library.list("管理窗口修改")[1].id == firstId)
     local countBefore = #library.list()
@@ -730,10 +732,22 @@ test("manager opens independently without replacing native UI and renders search
     local englishChildren = englishWindow.params.content.params.children
     assert(englishChildren[1].params.children[1].params.placeholderText == "Search template names…")
     local englishRows = englishChildren[2].params.content.params.layout.params.children
-    assert(englishRows[1].params.children[2].params.layout.params.children[1].params.text == library.list()[1].name)
+    assert(rowColumns(englishRows[1])[2].params.layout.params.children[1].params.text == library.list()[1].name)
     assert(rowControls(englishRows[1])[1].params.content.params.text == "Rename")
-    assert(englishRows[1].params.children[2].params.layout.params.children[2].params.text:find("modules", 1, true))
+    assert(rowColumns(englishRows[1])[2].params.layout.params.children[2].params.text:find("modules", 1, true))
     testLanguage = "zh_CN"
+end)
+test("missing station year is supplied for new snapshots and legacy builder payloads", function()
+    local original = entities[20].CONSTRUCTION.params.year
+    entities[20].CONSTRUCTION.params.year = nil
+    local saved = core.capture(20, 100, api.engine, api.type.ComponentType, api.res)
+    assert(saved.params.year == 1950)
+    entities[20].CONSTRUCTION.params.year = original
+    saved.params.year = nil
+    local template = core.toTemplate(saved, api.res, 1970)
+    assert(template.constructions[1].params.year == 1970 and saved.params.year == nil)
+    saved.params.year = 1920
+    assert(core.toTemplate(saved, api.res, 1970).constructions[1].params.year == 1920)
 end)
 test("translations reorder named values, preserve user text and fall back to English", function()
     local tr = require "blueprint_demo::/blueprint/i18n.lua"

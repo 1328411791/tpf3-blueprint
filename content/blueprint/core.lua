@@ -171,6 +171,28 @@ function core.menuCategories(desc, fileName, con, engine, types, transportModes)
     return categories
 end
 
+function core.templateImages(snapshot)
+    -- 原版道路模块化车站的顶层 description 引用了不存在的图片。
+    -- 按已保存的模块和年份使用原版实际提供的客运／货运模板图片。
+    if snapshot.constructionFileName == "::/stations/street/modular_street_station/modular_terminal.con" then
+        local year = snapshot.params.year or 1950
+        local era = year >= 1990 and "c" or (year >= 1950 and "b" or "a")
+        local cargo = false
+        for _, name in pairs(snapshot.modules) do
+            if name:find("cargo", 1, true) then cargo = true; break end
+        end
+        local base = "::/stations/street/modular_street_station/"
+        if cargo then
+            base = base .. "icons/cargo_era_" .. era .. "_universal"
+        else
+            base = base .. "passenger_era_" .. era
+        end
+        return base .. ".tga", base .. "_preview.tga"
+    end
+    return snapshot.icon and snapshot.icon ~= "" and snapshot.icon or "::/warehouses/icons/wh_goods.tga",
+        snapshot.previewIcon and snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga"
+end
+
 function core.capture(entity, id, engine, types, res, transportModes)
     local root, reason = core.resolveConstruction(entity, engine, types)
     assert(root, reason or gettext("BLUEPRINT_SELECT_BUILDING"))
@@ -188,6 +210,7 @@ function core.capture(entity, id, engine, types, res, transportModes)
     for key, value in pairs(rawParams) do
         if key ~= "modules" then params[key] = core.copy(value) end
     end
+    if params.year == nil then params.year = engine.util.getYear() end
     -- 库存货种在引擎中使用临时资源 ID；存储名称，放置时重新解析。
     local cargoByTag = {}
     for tag, cargo in pairs(params.tagToCargoType or {}) do
@@ -199,13 +222,15 @@ function core.capture(entity, id, engine, types, res, transportModes)
     local description = desc.description or {}
     local named = engine.getComponent(root, types.NAME)
     local name = named and named.name or description.name or gettext("BLUEPRINT_BUILDING")
-    return core.validate({
+    local snapshot = {
         version = 1, id = id, name = tr("BLUEPRINT_DEFAULT_NAME", {name = name, id = id}),
         constructionFileName = fileName, params = params, modules = modules,
         cargoByTag = cargoByTag, categories = categories,
         icon = description.icon or "::/warehouses/icons/wh_goods.tga",
         previewIcon = description.previewIcon or description.icon or "::/warehouses/icons/wh_goods_preview.tga",
-    })
+    }
+    snapshot.icon, snapshot.previewIcon = core.templateImages(snapshot)
+    return core.validate(snapshot)
 end
 
 function core.missingResources(snapshot, res)
@@ -220,11 +245,12 @@ function core.missingResources(snapshot, res)
     return missing
 end
 
-function core.toTemplate(snapshot, res)
+function core.toTemplate(snapshot, res, currentYear)
     core.validate(snapshot)
     local missing = core.missingResources(snapshot, res)
     assert(#missing == 0, tr("BLUEPRINT_MISSING_RESOURCES", {resources = table.concat(missing, ", ")}))
     local params = core.copy(snapshot.params)
+    if params.year == nil then params.year = currentYear end
     if next(snapshot.cargoByTag or {}) then
         params.tagToCargoType = {}
         for tag, name in pairs(snapshot.cargoByTag) do params.tagToCargoType[tag] = res.cargoTypeRep.find(name) end
