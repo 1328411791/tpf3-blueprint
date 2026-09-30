@@ -1,91 +1,26 @@
-# 蓝图
+# Blueprint
 
-第二版增加“保存建筑模板”工具。选择工具后点击一座当前玩家拥有的车站、仓库或车库，保存建筑资源、模块槽位和建筑参数，生成原生建造菜单卡片。通过模板管理窗口管理已保存的建筑蓝图。
+A Transport Fever 3 mod that saves existing player buildings as reusable blueprints and adds them to the construction menu.
 
-状态：当前游戏已确认没有动态资源注册接口，revision 5 使用固定 metacon 载体、GameScript 快照同步和实时 GUI 卡片。游戏日志已确认库同步成功，也确认资源预览 VM 没有 api.engine；建造回调现改为解码 GUI 传入的完整数值配置，不访问任何 api 或 app。信息面板使用事先计算的属性，菜单 step 中使用 react.fireEvent，动作回调允许缺省。实测旧版用户文件输出丢失了车站的稀疏模块槽位；文件存储现使用 version 2 编码封装，并保留完整读回校验。30 项 API 替身测试通过，包含丢弃稀疏数字键的文件输出模拟、旧库兼容、无 api/app 的资源回调、数值传输精度及菜单建造参数注入；Lua 脚本和 metacon 描述通过语法检查。新版菜单刷新、预览、计费及实际放置仍需游戏内验证；替身测试不等同于游戏内验证。
+## Features
 
-## 使用步骤
+- Save individual stations, warehouses and depots with their building parameters, modules and supported cargo settings.
+- Place saved blueprints using the game's construction controls, including rotation and height adjustment.
+- Manage templates in a searchable list with building previews.
+- Edit template names and descriptions, duplicate templates, and delete unwanted entries.
+- Keep a local template library that can be used across maps.
+- English and Simplified Chinese interface.
 
-1. 更新到 revision 5 后重新载入地图，加载模板管理界面、固定模板载体及 GameScript，确保该地图启用了 `蓝图`。当前包的 `modId` 是 `blueprint_demo`。
-2. 打开仓库、铁路建筑、道路建筑、港口建筑或机场建筑菜单，选择 **保存建筑模板**。如果有筛选条件，切换为全部。
-3. 点击一座已有的玩家建筑；点击仓库子建筑、车站终端时会尝试找到其唯一的顶层建筑。包含多座建筑的车站组不直接保存，请点击其中一座。
-4. 工具自动生成名称，例如 `货物仓库 · 模板 1`。先显示“已写入，正在同步菜单”；引擎确认快照后重建原生菜单缓存，并切换到新模板所在分类。后续每次保存不需要重新载入地图。
-5. 点击新模板卡片，使用原生旋转和高程控件放置。生成的建筑仍由原版或对应 Mod 的 `.con` 负责布局、连接、成本和模块编辑。
-6. 后续重新进入地图时会读取本机模板库，同步至 GameScript 状态，生成可用的模板卡片。分类优先读取建筑及其 constructionTemplates 的原生菜单定义，再依据交通资源目录或终端／车库交通模式判断；铁路建筑仅出现在铁路目录。旧版误存为四种交通目录的原版模板会在显示时自动纠正，无需重新保存。
+## How to Use
 
-模板文件由游戏 `app.saveUserdata` 写入：
+1. Enable **Blueprint** for your map.
+2. Open a supported construction category and select **Save Building Template**.
+3. Click a building you own and wait for the template to appear in the menu.
+4. Select the saved template and place it like a normal building.
+5. Open **Template Manager** at the upper right of the construction menu to search, edit, duplicate or delete templates.
 
-`C:\Program Files (x86)\Steam\userdata\364060473\3493540\local\blueprint_demo\library.lua`
+## Scope
 
-模板库属于本机用户，跨地图使用。引擎中的同步副本随地图保存，载入后菜单以本机模板库为准；本版不提供模板分享。模板依赖原版内容及当时使用的其他 Mod；依赖缺失的模板会暂时隐藏，原数据保留，恢复依赖并重新进入地图后可重新显示。
+Each blueprint contains one building. Nearby roads and tracks, vehicles, routes and building inventories are not included. Templates require the original building and module mods to be available.
 
-## 模板管理
-
-在原生建造菜单已有的浮动工具栏右上角追加“模板管理”按钮。保留原生 Window、内容根节点、布局及已有控件，不替换建造窗口结构。窗口仅列出本模组保存的模板，不包含原版或其他模组的建筑目录。滚动列表以 Component 承载列表布局，满足游戏 ScrollArea 的内容类型要求。
-
-- 左侧显示原建筑的预览图，右侧显示模板名称、交通分类、模块数及缺失依赖状态。预览图是资源自带图片，不是保存时的建筑截图。
-- 输入名称搜索模板；每行可编辑名称与描述、复制和删除。名称下显示描述，超出一行自动换行；旧模板显示“暂无描述”，点击“编辑”填写后保存。
-- 删除需要点击“确认删除”，删除模板文件中的记录，不改变地图上已放置的建筑。模板编号不重复使用。
-- “从地图新增”返回包含“保存建筑模板”的菜单分类；选择此工具，再点击地图建筑创建新模板。
-- 名称修改、复制和删除均写入文件并严格校验读回结果；同步完成后更新建造菜单。缺少依赖的模板仍可在管理窗口中操作。
-
-30 项代码测试通过，包含管理操作、写入失败、按钮接入、搜索列表及删除确认。按钮位置、窗口尺寸和操作反馈仍待实际游戏验证。
-
-存储格式 version 2 将模板库编码为仅含字符串键的数值数据块，避免游戏的 Lua 文件输出丢弃稀疏模块／货种槽位。旧 version 1 文件仍可读取，下次保存自动升级。此前因校验失败而留下的空模块车站模板无法从文件恢复，请重新从地图上原来的车站保存；列车车库等没有模块的旧模板仍可使用。
-
-## 保存范围
-
-- 保存一座顶层 Construction 的资源名、完整可序列化参数、模块槽位、原始随机种子和建筑年份。
-- 仓库模块货种从资源 ID 转换为完整名称，放置时重新解析，避免在不同地图中指向其他货种。
-- 不保存世界坐标与朝向，模板以原点、默认方向预览，放置时可旋转。
-- 不保存周边独立道路／轨道、线路分配、载具、库存、站组关系和建筑运行状态。
-- 本版不支持工业、城市建筑、路边物件、区域框选，以及在管理窗口中修改建筑几何或模块布局。
-- 无法完整序列化或解析模块的建筑会明确拒绝保存，不会悄悄丢弃参数。
-
-## 游戏内验证清单
-
-先用试验地图测试单座仓库和单座模块化车站：保存后立即查看菜单；比较预览的模块数量及布局；旋转和实际放置；检查费用、道路／轨道连接和模块编辑；保存地图后重新载入；退出游戏再进入检查模板库。
-
-如有问题，检查 `local/crash_dump/stdout.txt` 中的 `[Blueprint]` 消息、`runtime`、`menu_refresh`、`save_tool` 和 `saved_single` 相关脚本错误。正常链路依次记录“已写入”“引擎同步完成”；只有同步完成才发布新卡片。磁盘写入失败显示保存失败；新增载体未加载时会提示重新载入地图。
-
-## 文件用途
-
-多语言文本位于根目录 `strings.json`，目前提供简体中文和英文；添加语言及占位符规则见 [TRANSLATING.md](TRANSLATING.md)。界面随游戏语言加载，用户保存的模板名称保留原文。
-
-- `mod.json`：技术标识。
-- `_metadata/modinfo.json`：Mod Hub 中的名称、描述。
-- `content/blueprint/core.lua`：解析唯一建筑、归一化模块／货种、验证快照、还原模板。
-- `content/blueprint/library.lua`：读写本机模板库、验证读回结果、等待引擎同步、生成 GUI 菜单定义；不修改资源库。
-- `content/blueprint/manager.lua`：建造窗口右上角管理按钮、预览列表、搜索、重命名、复制及删除确认。
-- `content/blueprint/persistence.lua`：version 2 文件编码封装及旧 version 1 文件兼容读取，完整保留稀疏模块及货种槽位。
-- `content/blueprint/save_tool.res.lua` 与 `.script.lua`：原生建造工具、选取和保存反馈。
-- `content/blueprint/saved_single.metacon.tl` 与 `.script.lua`：加载时注册固定建造载体；建造脚本只解码菜单传入的完整配置，不读取其他 VM 的状态。
-- `content/blueprint/transport.lua`：将已解析的建筑、参数、模块和货种封装为数值参数，资源 VM 直接解码；每个数据块仅使用 24 位整数，保留字符串、嵌套表及精度。
-- `content/blueprint/runtime.lua`、`runtime.gs.lua` 与 `runtime.script.lua`：验证模板库、订阅脚本事件、存储引擎快照，供 GUI 确认同步完成。
-- `content/blueprint/menu_refresh.res.lua` 与 `.script.lua`：使用官方 `react-replacement-config` 包装建造窗口；新增模板后清除菜单缓存，并让原生参数单例窗口同步重建、重新回传 initRef，防止参数面板引用已销毁的建筑列表。包装原生 getActionParams 以注入完整配置并保留旋转、高程和输入行为。
-- `tests/run_tests.py` 与 `tests/test_blueprint.lua`：基于 Lua 运行时的 API 协议测试，需要开发依赖 `lupa`，游戏不需要 Python 或该依赖。
-
-图标引用原版资源，游戏原版也使用不带 `@2x` 的逻辑名称，实际文件为 `@2x.tga`。
-本例未重新分发原版模型、贴图或建筑脚本。
-
-## VS Code 开发配置
-
-已按游戏安装目录中的 `vscode-template` 补齐开发配置：
-
-- `.vscode/extensions.json`：推荐安装官方模板指定的 `pdesaulniers.vscode-teal` 扩展。
-- `tlconfig.lua`：引用本机游戏的 `api/tealdef` 和 `base/tealdef` 类型定义。
-- `all_def.tl`：引入 `api_def` 与 `content_def`，不包含模板中的示例 Mod 引用。
-
-在 VS Code 中打开本项目根目录（包含 `mod.json` 和 `tlconfig.lua` 的目录），安装推荐扩展。
-当前游戏路径为 `D:/SteamLibrary/steamapps/common/Transport Fever 3`；迁移到其他电脑或更换安装目录时，修改 `tlconfig.lua` 中的两个路径。
-这些文件用于编辑器开发支持；游戏内加载与放置仍需按下面的步骤验证。
-
-## 手动试验步骤
-
-1. 将本项目文件夹放到本机开发目录（当前已位于该目录的 `blueprint` 子目录）：
-   `C:\Program Files (x86)\Steam\userdata\364060473\3493540\local\staging_area\`。
-2. 在游戏 Mod Hub 里查找 `蓝图`，在单独的试验地图启用。
-3. 按本文开头的使用步骤保存已有建筑，检查新模板的预览、旋转、高程、计费和实际放置。
-4. 放置后检查模块编辑及道路／轨道连接，再保存并重新载入地图。
-
-开发测试：`python tests/run_tests.py`。如果 `lupa` 安装在临时目录，将 `BLUEPRINT_TEST_DEPS` 设置为该目录。
+Deleting a template leaves buildings already placed on the map intact.
