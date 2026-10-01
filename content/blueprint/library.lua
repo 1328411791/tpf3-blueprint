@@ -2,7 +2,6 @@ local gettext = _
 local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local core = require "blueprint_demo::/blueprint/core.lua"
 local runtime = require "blueprint_demo::/blueprint/runtime.lua"
-local transport = require "blueprint_demo::/blueprint/transport.lua"
 local persistence = require "blueprint_demo::/blueprint/persistence.lua"
 local library = {}
 local directory, file = "blueprint_demo", "library"
@@ -166,7 +165,7 @@ function library.decorateDefinitions(definitions)
             -- 信息面板使用已计算的属性；建造器由 getActionParams 包装器设置载体。
             -- 避免原生信息面板再次用不含配置数据的默认参数调用载体。
             definition.constructions = {}
-            definition.blueprintPayload = transport.encode(core.toTemplate(snapshot, api.res, api.engine.util.getYear()))
+            definition.blueprintTemplate = core.toTemplate(snapshot, api.res, api.engine.util.getYear())
             definition.costsYearProgression = false
             definition.name = snapshot.name
             definition.description = snapshot.description and snapshot.description ~= "" and snapshot.description
@@ -198,12 +197,20 @@ end
 
 function library.getRevision() return revision end
 function library.applyBuilderPayload(definition, action)
-    if not definition or not definition.blueprintPayload then return action end
+    if not definition or not (definition.blueprintTemplate or definition.blueprintPayload) then return action end
     local builder = action.constructionActionParams and action.constructionActionParams.constructionBuilder
     assert(builder, gettext("BLUEPRINT_NO_BUILDER"))
     builder.constructions = {library.carrier}
     builder.constructionTemplate = -1
-    builder.params = core.copy(definition.blueprintPayload)
+    if definition.blueprintTemplate then
+        -- 实验：底层 params 声明为 table，直接传嵌套对象，保留原生建造参数。
+        local params = shallow(builder.params)
+        params.blueprintTemplate = core.copy(definition.blueprintTemplate)
+        builder.params = params
+    else
+        -- 已存在的旧卡片仍可传入旧数字块；新生成卡片始终走对象路径。
+        builder.params = core.copy(definition.blueprintPayload)
+    end
     return action
 end
 return library

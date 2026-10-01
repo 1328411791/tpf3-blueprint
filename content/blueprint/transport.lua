@@ -1,6 +1,5 @@
 local gettext = _
--- 建造脚本运行在没有 api.engine 的资源 VM 中。
--- 将已解析的模板装入数值参数；每个数值只有 24 位，浮点传输也能精确保存。
+-- 无损文本序列化；数字块编码仅用于读取旧版模板库。
 local core = require "blueprint_demo::/blueprint/core.lua"
 local transport = {}
 local limit = 1024 * 1024
@@ -31,9 +30,14 @@ local function serialize(value)
     return table.concat(parts)
 end
 
-function transport.encode(template)
+function transport.serialize(template)
     local text = serialize(core.copy(template))
     assert(#text <= limit, gettext("BLUEPRINT_TRANSFER_SIZE"))
+    return text
+end
+
+function transport.encode(template)
+    local text = transport.serialize(template)
     local params = {blueprintBytes = #text}
     for offset = 1, #text, 3 do
         local a, b, c = text:byte(offset, offset + 2)
@@ -51,7 +55,12 @@ function transport.decode(params)
         assert(type(word) == "number" and word >= 0 and word <= 16777215 and word % 1 == 0, gettext("BLUEPRINT_TRANSFER_INCOMPLETE"))
         chunks[index] = string.char(math.floor(word / 65536), math.floor(word / 256) % 256, word % 256)
     end
-    local text, pos = table.concat(chunks):sub(1, size), 1
+    return transport.deserialize(table.concat(chunks):sub(1, size))
+end
+
+function transport.deserialize(text)
+    assert(type(text) == "string" and #text >= 1 and #text <= limit, gettext("BLUEPRINT_TRANSFER_MISSING"))
+    local size, pos = #text, 1
     local function count()
         local finish = text:find(":", pos, true)
         assert(finish, gettext("BLUEPRINT_TRANSFER_LENGTH"))

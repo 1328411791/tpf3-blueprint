@@ -27,3 +27,13 @@ Each blueprint contains one building. Nearby roads and tracks, vehicles, routes 
 Deleting a template leaves buildings already placed on the map intact.
 
 Default template names use a separate counter from internal IDs. Deleting every template resets the next default name to Template 1; internal IDs keep increasing. Duplicating a template adds a copy suffix without consuming a default name number. Existing template names remain unchanged.
+
+## Experimental Template Parameters
+
+This branch passes a nested `blueprintTemplate` Lua table through `ConstructionBuilder.params`. The carrier's `createTemplateFn` validates and returns a copy of this object. Numeric payload blocks are no longer generated during placement. The built-in API declares builder parameters as `table`. Local in-game testing confirmed successful placement with modules intact, alongside automated tests and read-only verification of game-written library files; see [verification results](tests/VERIFICATION.md). This evidence covers the tested game build and templates, rather than every building mod or future engine version.
+
+The carrier also accepts legacy numeric `blueprintBytes`/`blueprintWordN` parameters, and the menu adapter accepts older `blueprintPayload` cards. These compatibility paths decode existing data only; new cards use direct objects. Invalid direct objects are rejected rather than silently replaced by legacy payloads.
+
+Library files now use a version 3 envelope: `{version = 3, encoding = "base64", data = "..."}`. Base64 wraps the existing lossless tagged serialization, preserving sparse module slots, Unicode, booleans and integer precision. Version 1 and version 2 libraries remain readable; the next successful edit saves them in version 3. The stable branch cannot read version 3 libraries, so back up `local/blueprint_demo/library.lua` before testing if you plan to switch back. Loading alone does not migrate the file. Individual-template export/import UI is not included in this experiment.
+
+To verify the experiment, reload a map, select an existing template, check its preview, rotate it, adjust height and place it. Try both a modular rail station and a road station or warehouse, then save a new template and reload again. Verify module count, cargo settings and building parameters. An error about a missing single-building template indicates the nested payload may not have reached the callback intact.

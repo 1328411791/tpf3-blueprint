@@ -104,7 +104,7 @@ app = {
     saveUserdata = function(directory, file, value)
         assert(directory == "blueprint_demo" and file == "library")
         if failWrite then error("disk failure") end
-        assert(value.version == 2 and value.data)
+        assert(value.version == 3 and value.encoding == "base64" and type(value.data) == "string")
         -- 模拟只保留字符串键及连续数组的游戏文件输出。
         local function fileCopy(input)
             if type(input) ~= "table" then return input end
@@ -269,27 +269,37 @@ test("save uses read-only repositories and waits for engine acknowledgement", fu
     local cards = library.decorateDefinitions({carrier})
     assert(#cards == 1 and #cards[1].constructions == 0)
     assert(cards[1].costsYearProgression == false and type(cards[1].attributes) == "table")
-    local action = {constructionActionParams = {constructionBuilder = {height = 5, rotation = 0.5}}}
+    local action = {constructionActionParams = {constructionBuilder = {height = 5, rotation = 0.5,
+        params = {nativeChoice = 42}}}}
     assert(library.applyBuilderPayload(cards[1], action) == action)
     assert(action.constructionActionParams.constructionBuilder.constructions[1] == library.carrier)
     assert(action.constructionActionParams.constructionBuilder.height == 5)
-    assert(core.equal(transport.decode(action.constructionActionParams.constructionBuilder.params), core.toTemplate(saved, api.res)))
+    local builderParams = action.constructionActionParams.constructionBuilder.params
+    assert(builderParams.nativeChoice == 42 and builderParams.blueprintBytes == nil)
+    assert(core.equal(builderParams.blueprintTemplate, core.toTemplate(saved, api.res)))
     assert(cards[1].resName == library.resourceName(saved.id) and cards[1].constructionTemplate == -1)
     assert(#cards[1].params == #carrier.params)
     assert(cards[1].metadata.company.permitKey == "warehouse")
     assert(#carrier.params == 1 and carrier.resName == library.carrier)
     assert(library.getRevision() == 1 and #outgoing == 1)
 end)
-test("resource callback has no api or app and uses only supplied numeric parameters", function()
+test("resource callback returns supplied nested template without api or app", function()
     local exports = script("blueprint/saved_single.script.lua")
-    local params = transport.encode(core.toTemplate(disk.templates[1], api.res))
+    local params = {blueprintTemplate = core.toTemplate(disk.templates[1], api.res)}
     local previousApp, previousApi = app, api
     app, api = nil, nil
     local built = exports.createTemplateFn({}, params).constructions[1]
     app, api = previousApp, previousApi
     assert(built.params.seed == 34 and built.params.year == 1940)
     assert(built.modules[632502500] == "::/warehouses/wh_goods.module")
-    rejects(function() exports.createTemplateFn({}, {}) end, "缺少有效")
+    rejects(function() exports.createTemplateFn({}, {}) end, "缺少单座")
+    assert(built ~= params.blueprintTemplate.constructions[1])
+    built.params.seed = -1
+    assert(params.blueprintTemplate.constructions[1].params.seed == 34)
+    for _, payload in ipairs({{constructions = {}}, {constructions = {{}, {}}},
+        {constructions = {{constructionFileName = "x", params = {}, modules = false}}}}) do
+        rejects(function() exports.createTemplateFn({}, {blueprintTemplate = payload}) end, "缺少单座")
+    end
 end)
 test("existing depot templates with four saved categories are corrected in the menu", function()
     local previousDisk, previousShared = disk, copy(shared)
@@ -340,15 +350,16 @@ test("versioned persistence preserves sparse maps and reads legacy libraries", f
     local legacy = {version = 1, nextId = 2, templates = {snapshot}}
     assert(core.equal(persistence.decode(copy(legacy)), legacy))
     local encoded = persistence.encode(legacy)
-    assert(encoded.version == 2 and encoded.data)
-    for key, value in pairs(encoded.data) do
-        assert(type(key) == "string" and type(value) == "number")
-    end
+    assert(encoded.version == 3 and encoded.encoding == "base64" and type(encoded.data) == "string")
+    assert(encoded.data:match("^[A-Za-z0-9+/=]+$") and encoded.blueprintWord1 == nil)
     local restored = persistence.decode(encoded)
     assert(restored.templates[1].modules[632502500] == "::/warehouses/wh_goods.module")
     assert(restored.templates[1].cargoByTag[632502500] == "::/cargos/coal.cargo")
     assert(core.equal(restored, legacy))
+    assert(core.equal(persistence.decode({version = 2, data = transport.encode(legacy)}), legacy))
     rejects(function() persistence.decode({version = 2, data = {}}) end, "缺少有效")
+    rejects(function() persistence.decode({version = 3, encoding = "unknown", data = "AAAA"}) end, "缺少编码")
+    rejects(function() persistence.decode({version = 3, encoding = "base64", data = "!!!!"}) end, "Base64")
 end)
 test("reload restores local library without runtime resource mutation", function()
     library.save(21)
@@ -359,7 +370,7 @@ test("reload restores local library without runtime resource mutation", function
     acknowledge()
     assert(#library.decorateDefinitions({carrier}) == 2)
     local exports = script("blueprint/saved_single.script.lua")
-    assert(exports.createTemplateFn({}, transport.encode(core.toTemplate(disk.templates[2], api.res))).constructions[1].params.platforms == 3)
+    assert(exports.createTemplateFn({}, {blueprintTemplate = core.toTemplate(disk.templates[2], api.res)}).constructions[1].params.platforms == 3)
 end)
 test("write failure never publishes or consumes an ID", function()
     local oldRevision = library.getRevision()
@@ -547,7 +558,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     assert(action.constructionActionParams.constructionBuilder.constructions[1] == library.carrier)
     assert(core.equal(action.constructionActionParams.constructionBuilder.builderAudioRes, card.builderAudioRes))
     assert(#card.builderAudioRes == 1)
-    assert(transport.decode(action.constructionActionParams.constructionBuilder.params).constructions[1])
+    assert(action.constructionActionParams.constructionBuilder.params.blueprintTemplate.constructions[1])
     local keyBefore = calledParams.meta.localKey
     local saved, resource = library.save(10)
     assert(not cleared)
@@ -834,8 +845,8 @@ test("saved cards inherit building sounds and provide a native fallback", functi
     assert(cards[1] == ordinary and ordinary.builderAudioRes[1] == "ordinary_sound")
     local found = false
     for _, card in ipairs(cards) do
-        if card.blueprintPayload then
-            local payload = transport.decode(card.blueprintPayload)
+        if card.blueprintTemplate then
+            local payload = card.blueprintTemplate
             if payload.constructions[1].constructionFileName == "::/warehouses/warehouse.con" then
                 assert(card.builderAudioRes[1] == source.soundConfig.builderAudioRes)
                 found = true
@@ -846,7 +857,7 @@ test("saved cards inherit building sounds and provide a native fallback", functi
     for _, soundConfig in ipairs({{}, {builderAudioRes = ""}}) do
         source.soundConfig = soundConfig
         for _, card in ipairs(library.decorateDefinitions({carrier})) do
-            local payload = transport.decode(card.blueprintPayload)
+            local payload = card.blueprintTemplate
             if payload.constructions[1].constructionFileName == "::/warehouses/warehouse.con" then
                 assert(card.builderAudioRes[1] == "::/gui/construction/sound/buildoze_construction_large.builder_audio")
             end
@@ -895,5 +906,110 @@ test("legacy libraries accept an optional name counter and reject invalid counte
         invalid.nextNameNumber = value
         rejects(function() runtime.validateLibrary(invalid) end, "模板名称序号无效")
     end
+end)
+test("Base64 follows standard vectors and preserves all byte values", function()
+    local base64 = require "blueprint_demo::/blueprint/base64.lua"
+    local vectors = {{"", ""}, {"f", "Zg=="}, {"fo", "Zm8="}, {"foo", "Zm9v"},
+        {"foob", "Zm9vYg=="}, {"fooba", "Zm9vYmE="}, {"foobar", "Zm9vYmFy"}}
+    for _, vector in ipairs(vectors) do
+        assert(base64.encode(vector[1]) == vector[2])
+        assert(base64.decode(vector[2]) == vector[1])
+    end
+    local bytes = {}
+    for i = 0, 255 do bytes[#bytes + 1] = string.char(i) end
+    local binary = table.concat(bytes) .. "中文\0\n"
+    assert(base64.decode(base64.encode(binary)) == binary)
+    for _, invalid in ipairs({"A", "!!!!", "=AAA", "A===", "AA=A", "AA==AAAA", "AB==", "AAB="}) do
+        rejects(function() base64.decode(invalid) end, "Base64")
+    end
+end)
+test("Base64 library preserves sparse keys and integer precision without evaluating Lua", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local value = {version = 1, nextId = 2, templates = {copy(snapshot)}}
+    value.templates[1].params.preciseInteger = 9007199254740993
+    value.templates[1].params.preciseFloat = 0.12345678901234567
+    value.templates[1].params.enabled = true
+    value.templates[1].params.label = "中文 % {name} \0\n return os.execute('invalid')"
+    local encoded = persistence.encode(value)
+    assert(core.equal(persistence.decode(encoded), value))
+    assert(encoded.data:find("blueprintWord", 1, true) == nil)
+    rejects(function() transport.deserialize("return os.execute('invalid')") end, "类型无效")
+end)
+test("placement passes nested objects without any numeric codec", function()
+    acknowledge()
+    local encode, decode = transport.encode, transport.decode
+    transport.encode = function() error("Numeric encode must not run during placement") end
+    transport.decode = function() error("Numeric decode must not run during placement") end
+    local card = library.decorateDefinitions({carrier})[1]
+    assert(card and card.blueprintTemplate and card.blueprintPayload == nil)
+    local action = {constructionActionParams = {constructionBuilder = {
+        height = 3, rotation = 1.2, params = {paramX = 1, year = 2000}}}}
+    library.applyBuilderPayload(card, action)
+    local builder = action.constructionActionParams.constructionBuilder
+    local exports = script("blueprint/saved_single.script.lua")
+    local template = exports.createTemplateFn({}, builder.params)
+    assert(core.equal(template, card.blueprintTemplate))
+    assert(builder.height == 3 and builder.rotation == 1.2 and builder.params.paramX == 1)
+    local slot, module = next(card.blueprintTemplate.constructions[1].modules)
+    assert(template.constructions[1].modules[slot] == module)
+    builder.params.blueprintTemplate.constructions[1].params.seed = -999
+    assert(card.blueprintTemplate.constructions[1].params.seed ~= -999)
+    transport.encode, transport.decode = encode, decode
+end)
+test("legacy numeric construction parameters still work without api or app", function()
+    local template = core.toTemplate(snapshot, api.res)
+    local packet = transport.encode(template)
+    local action = {constructionActionParams = {constructionBuilder = {height = 5, rotation = 0.5}}}
+    library.applyBuilderPayload({blueprintPayload = packet}, action)
+    local builder = action.constructionActionParams.constructionBuilder
+    assert(core.equal(builder.params, packet) and builder.params ~= packet)
+    assert(builder.height == 5 and builder.rotation == 0.5)
+    local exports = script("blueprint/saved_single.script.lua")
+    local previousApp, previousApi = app, api
+    app, api = nil, nil
+    local restored = exports.createTemplateFn({}, builder.params)
+    app, api = previousApp, previousApi
+    assert(core.equal(restored, template))
+    assert(restored.constructions[1].modules[632502500] == "::/warehouses/wh_goods.module")
+    local broken = copy(packet)
+    broken.blueprintWord1 = nil
+    rejects(function() exports.createTemplateFn({}, broken) end, "不完整")
+    local mixed = copy(packet)
+    mixed.blueprintTemplate = {constructions = {}}
+    rejects(function() exports.createTemplateFn({}, mixed) end, "缺少单座")
+    mixed.blueprintTemplate = template
+    assert(core.equal(exports.createTemplateFn({}, mixed), template))
+end)
+test("version 1 and 2 files load unchanged and migrate only on a successful edit", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local previousDisk, loadUserdata, saveUserdata = disk, app.loadUserdata, app.saveUserdata
+    local original = {version = 1, nextId = 2, templates = {copy(snapshot)}}
+    original.templates[1].params.preciseInteger = 9007199254740993
+    for _, version in ipairs({1, 2}) do
+        local stored = version == 1 and copy(original) or {version = 2, data = transport.encode(original)}
+        disk = copy(original)
+        app.loadUserdata = function() return copy(stored) end
+        app.saveUserdata = function(directory, file, value)
+            saveUserdata(directory, file, value)
+            stored = copy(value)
+        end
+        modules["blueprint_demo::/blueprint/library.lua"] = nil
+        local reloaded = require "blueprint_demo::/blueprint/library.lua"
+        local oldWrites = writes
+        assert(core.equal(reloaded.list(), original.templates))
+        assert(writes == oldWrites and stored.version == version)
+        failWrite = true
+        rejects(function() reloaded.rename(snapshot.id, "迁移模板") end, "disk failure")
+        failWrite = false
+        assert(stored.version == version and core.equal(reloaded.list(), original.templates))
+        reloaded.rename(snapshot.id, "迁移模板")
+        assert(stored.version == 3 and stored.encoding == "base64" and type(stored.data) == "string")
+        local restored = persistence.decode(stored)
+        assert(restored.templates[1].name == "迁移模板")
+        restored.templates[1].name = original.templates[1].name
+        assert(core.equal(restored, original))
+    end
+    disk, app.loadUserdata, app.saveUserdata = previousDisk, loadUserdata, saveUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
 end)
 print(tostring(passed) .. " Lua contract tests passed")
