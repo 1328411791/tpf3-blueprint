@@ -18,8 +18,12 @@ function runtime.validateLibrary(candidate)
         assert(type(index) == "number" and index >= 1 and index % 1 == 0, gettext("BLUEPRINT_LIST_INDEX"))
         count = count + 1
     end
-    assert(count == #candidate.templates, gettext("BLUEPRINT_LIST_GAPS"))
-    for _, snapshot in ipairs(candidate.templates) do
+    -- Lua 的长度运算符不能判断稀疏数组是否连续；逐项拒绝空洞，避免 ipairs 截断迁移数据。
+    for index = 1, count do
+        assert(candidate.templates[index] ~= nil, gettext("BLUEPRINT_LIST_GAPS"))
+    end
+    for index = 1, count do
+        local snapshot = candidate.templates[index]
         core.validate(snapshot)
         assert(not ids[snapshot.id] and snapshot.id < candidate.nextId, gettext("BLUEPRINT_DUPLICATE_ID"))
         ids[snapshot.id] = true
