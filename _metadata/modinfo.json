@@ -10,7 +10,12 @@
     "summary": "Save and manage reusable building templates in the construction menu.",
     "tags": [
         "Misc",
-        "Script Mod"
+        "Warehouse",
+        "Airport/Heliport",
+        "Rail Station",
+        "Script Mod",
+        "Port",
+        "Road Station"
     ],
     "url": "https://github.com/1328411791/tpf3-blueprint"
 }
