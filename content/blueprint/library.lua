@@ -105,6 +105,29 @@ function library.list(query)
     return result
 end
 
+function library.exportTemplate(id)
+    library.ensureLoaded()
+    local _, snapshot = find(id, state)
+    return persistence.encodeTemplate(snapshot), snapshot.name
+end
+
+function library.previewImport(text)
+    local snapshot = persistence.decodeTemplate(text)
+    return snapshot, core.missingResources(snapshot, api.res)
+end
+
+function library.importTemplate(text)
+    library.ensureLoaded()
+    local snapshot = library.previewImport(text)
+    local candidate = core.copy(state)
+    snapshot.id = candidate.nextId
+    candidate.nextId = candidate.nextId + 1
+    candidate.nextNameNumber = nextNameNumber()
+    candidate.templates[#candidate.templates + 1] = snapshot
+    commit(candidate, snapshot.id)
+    return core.copy(snapshot)
+end
+
 function library.updateMetadata(id, name, description)
     library.ensureLoaded()
     assert(type(name) == "string", gettext("BLUEPRINT_ENTER_NAME"))

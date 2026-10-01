@@ -9,6 +9,8 @@ A Transport Fever 3 mod that saves existing player buildings as reusable bluepri
 - Inherit the original building's construction sounds, with a standard building sound as fallback.
 - Manage templates in a searchable list with building previews.
 - Edit template names and descriptions, duplicate templates, and delete unwanted entries.
+- Filter saved templates by railway, road, water, air or warehouse category.
+- Import and share individual blueprints as Base64 strings.
 - Keep a local template library that can be used across maps.
 - English and Simplified Chinese interface.
 
@@ -19,6 +21,8 @@ A Transport Fever 3 mod that saves existing player buildings as reusable bluepri
 3. Click a building you own and wait for the template to appear in the menu.
 4. Select the saved template and place it like a normal building.
 5. Open **Template Manager** at the upper right of the construction menu to search, edit, duplicate or delete templates.
+6. Use the category buttons below the search field to filter the list.
+7. Click **Share** on a template, click its string field and press **Ctrl+A**, then **Ctrl+C**. Click **Import Blueprint** to paste a shared string, review its name and category, then import it. Imports receive a new local ID. Templates with missing dependencies can be stored but need the required mods before placement.
 
 ## Scope
 
@@ -34,6 +38,27 @@ This branch passes a nested `blueprintTemplate` Lua table through `ConstructionB
 
 The carrier also accepts legacy numeric `blueprintBytes`/`blueprintWordN` parameters, and the menu adapter accepts older `blueprintPayload` cards. These compatibility paths decode existing data only; new cards use direct objects. Invalid direct objects are rejected rather than silently replaced by legacy payloads.
 
-Library files now use a version 3 envelope: `{version = 3, encoding = "base64", data = "..."}`. Base64 wraps the existing lossless tagged serialization, preserving sparse module slots, Unicode, booleans and integer precision. Version 1 and version 2 libraries remain readable; the next successful edit saves them in version 3. The stable branch cannot read version 3 libraries, so back up `local/blueprint_demo/library.lua` before testing if you plan to switch back. Loading alone does not migrate the file. Individual-template export/import UI is not included in this experiment.
+Library files now use version 4 with one independently encoded template per array element:
+
+```lua
+{
+    version = 4,
+    encoding = "base64",
+    nextId = 25,
+    nextNameNumber = 5,
+    templateOrder = {21, 22, 23, 24},
+    data = {
+        rail_buildings = {"<template Base64>", "<template Base64>"},
+        road_buildings = {},
+        water_buildings = {},
+        air_buildings = {"<template Base64>"},
+        warehouses = {"<template Base64>"},
+    },
+}
+```
+
+Each Base64 element decodes to a complete template snapshot with its own ID, name, description, construction parameters and modules. Known resource directories determine the storage group; custom resources use their first saved category, including custom categories. A template is stored once even if it belongs to multiple menu categories. `templateOrder` preserves the original cross-category list order. These storage groups do not change the template's in-game menu categories.
+
+Base64 wraps the lossless tagged serialization, preserving sparse module slots, Unicode, booleans and integer precision. Version 1, 2 and 3 libraries remain readable; the next successful edit saves them in version 4. Loading alone does not migrate the file. Older implementations do not read version 4 libraries, so back up `local/blueprint_demo/library.lua` before switching back. Each shared string uses the same format as one v4 category-array element. Share exports only the selected template; it does not export the entire library. The native input field supports keyboard copying and pasting; the exposed game API does not provide a direct clipboard-write function.
 
 To verify the experiment, reload a map, select an existing template, check its preview, rotate it, adjust height and place it. Try both a modular rail station and a road station or warehouse, then save a new template and reload again. Verify module count, cargo settings and building parameters. An error about a missing single-building template indicates the nested payload may not have reached the callback intact.
