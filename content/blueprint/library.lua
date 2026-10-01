@@ -2,7 +2,6 @@ local gettext = _
 local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local core = require "blueprint_demo::/blueprint/core.lua"
 local runtime = require "blueprint_demo::/blueprint/runtime.lua"
-local transport = require "blueprint_demo::/blueprint/transport.lua"
 local persistence = require "blueprint_demo::/blueprint/persistence.lua"
 local library = {}
 local directory, file = "blueprint_demo", "library"
@@ -82,7 +81,7 @@ function library.save(entity)
     candidate.templates[#candidate.templates + 1] = snapshot
     candidate.nextId = candidate.nextId + 1
     candidate.nextNameNumber = nameNumber + 1
-    commit(candidate, snapshot.id, "blueprint_demo::/blueprint/save_tool.res")
+    commit(candidate, snapshot.id, library.resourceName(snapshot.id))
     debugPrint("[Blueprint] " .. tr("BLUEPRINT_SAVED_WAIT", {name = snapshot.name}))
     return snapshot, library.resourceName(snapshot.id)
 end
@@ -104,6 +103,29 @@ function library.list(query)
         end
     end
     return result
+end
+
+function library.exportTemplate(id)
+    library.ensureLoaded()
+    local _, snapshot = find(id, state)
+    return persistence.encodeTemplate(snapshot), snapshot.name
+end
+
+function library.previewImport(text)
+    local snapshot = persistence.decodeTemplate(text)
+    return snapshot, core.missingResources(snapshot, api.res)
+end
+
+function library.importTemplate(text)
+    library.ensureLoaded()
+    local snapshot = library.previewImport(text)
+    local candidate = core.copy(state)
+    snapshot.id = candidate.nextId
+    candidate.nextId = candidate.nextId + 1
+    candidate.nextNameNumber = nextNameNumber()
+    candidate.templates[#candidate.templates + 1] = snapshot
+    commit(candidate, snapshot.id)
+    return core.copy(snapshot)
 end
 
 function library.updateMetadata(id, name, description)
@@ -166,7 +188,7 @@ function library.decorateDefinitions(definitions)
             -- 信息面板使用已计算的属性；建造器由 getActionParams 包装器设置载体。
             -- 避免原生信息面板再次用不含配置数据的默认参数调用载体。
             definition.constructions = {}
-            definition.blueprintPayload = transport.encode(core.toTemplate(snapshot, api.res, api.engine.util.getYear()))
+            definition.blueprintTemplate = core.toTemplate(snapshot, api.res, api.engine.util.getYear())
             definition.costsYearProgression = false
             definition.name = snapshot.name
             definition.description = snapshot.description and snapshot.description ~= "" and snapshot.description
@@ -198,12 +220,20 @@ end
 
 function library.getRevision() return revision end
 function library.applyBuilderPayload(definition, action)
-    if not definition or not definition.blueprintPayload then return action end
+    if not definition or not (definition.blueprintTemplate or definition.blueprintPayload) then return action end
     local builder = action.constructionActionParams and action.constructionActionParams.constructionBuilder
     assert(builder, gettext("BLUEPRINT_NO_BUILDER"))
     builder.constructions = {library.carrier}
     builder.constructionTemplate = -1
-    builder.params = core.copy(definition.blueprintPayload)
+    if definition.blueprintTemplate then
+        -- 实验：底层 params 声明为 table，直接传嵌套对象，保留原生建造参数。
+        local params = shallow(builder.params)
+        params.blueprintTemplate = core.copy(definition.blueprintTemplate)
+        builder.params = params
+    else
+        -- 已存在的旧卡片仍可传入旧数字块；新生成卡片始终走对象路径。
+        builder.params = core.copy(definition.blueprintPayload)
+    end
     return action
 end
 return library

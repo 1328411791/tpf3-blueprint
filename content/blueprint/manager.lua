@@ -10,8 +10,14 @@ local windowId = "blueprint.template.manager"
 local function sized(width, height)
     return {styleSheet = styleutil.makeStyle {size = {width, height}}}
 end
-local function textButton(label, onClick)
-    return builtin.Button {content = builtin.TextView {text = label}, onClick = onClick}
+local function textButton(label, onClick, width)
+    return builtin.Button {meta = width and sized(width, 32) or nil,
+        content = builtin.TextView {text = label}, onClick = onClick}
+end
+local function spacer(width, height)
+    local meta = sized(width, height)
+    meta.mouseTransparent = true
+    return builtin.Component {meta = meta, layout = builtin.BoxLayout {children = {}}}
 end
 local function close()
     api.gui.byId.setVisible(windowId, false)
@@ -25,6 +31,78 @@ local categoryLabels = {
     water_buildings = gettext("BLUEPRINT_WATER_BUILDINGS"), air_buildings = gettext("BLUEPRINT_AIR_BUILDINGS"), warehouses = gettext("BLUEPRINT_WAREHOUSES"),
 }
 
+local exchangeId = "blueprint.template.exchange"
+local exchangeRequest = {}
+local function snapshotDetails(snapshot)
+    local count = 0
+    for _ in pairs(snapshot.modules) do count = count + 1 end
+    return tr("BLUEPRINT_DETAILS", {categories = categoryLabels[snapshot.categories[1]] or snapshot.categories[1], count = count})
+end
+
+local ExchangeWindow = react.RegisterWrapperRecipe("BlueprintTemplateExchange", builtin.Window, function()
+    local request = react.useState(exchangeRequest)
+    local input = react.useState("")
+    local feedback = react.useState("")
+    react.onEvent("blueprintExchangeRequested", function(_, payload)
+        request:set(payload); input:set(""); feedback:set("")
+    end)
+    local sharing = request:old().kind == "share"
+    local function dismiss() api.gui.byId.setVisible(exchangeId, false) end
+    local function inspect(text)
+        input:set(text)
+        if text == "" then feedback:set(""); return end
+        local ok, snapshot, missing = pcall(library.previewImport, text)
+        if ok then
+            feedback:set(snapshot.name .. "\n" .. snapshotDetails(snapshot)
+                .. (#missing > 0 and gettext("BLUEPRINT_IMPORT_MISSING") or ""))
+        else feedback:set(gettext("BLUEPRINT_IMPORT_INVALID")) end
+    end
+    local controls = {textButton(gettext(sharing and "BLUEPRINT_CLOSE" or "BLUEPRINT_CANCEL"), dismiss)}
+    if not sharing then
+        controls[#controls + 1] = textButton(gettext("BLUEPRINT_IMPORT"), function()
+            local ok, result = pcall(library.importTemplate, input:old())
+            if not ok then feedback:set(tr("BLUEPRINT_OP_FAILED", {error = result})); return end
+            react.fireEvent(nil, "blueprintLibraryChanged", {message = gettext("BLUEPRINT_IMPORTED"), resetFilter = true})
+            dismiss()
+        end)
+    end
+    return builtin.Window {
+        id = exchangeId, title = gettext(sharing and "BLUEPRINT_SHARE_TITLE" or "BLUEPRINT_IMPORT_TITLE"),
+        initialVisible = true, closable = true, movable = true, onClose = dismiss,
+        content = builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
+            builtin.TextView {meta = sized(560, 30), text = sharing and request:old().name or gettext("BLUEPRINT_IMPORT_HINT")},
+            builtin.TextInputField {
+                meta = sized(560, 110), maxLength = 2 * 1024 * 1024,
+                value = sharing and request:old().text or input:old(),
+                placeholderText = gettext("BLUEPRINT_IMPORT_PLACEHOLDER"),
+                focusOnStartEditing = true, deselectOnFocusLost = false,
+                onTyping = sharing and function() end or inspect,
+                onValueChange = sharing and function() end or inspect,
+            },
+            builtin.TextView {meta = sized(560, -1), text = sharing and gettext("BLUEPRINT_SHARE_COPY_HINT") or feedback:old()},
+            builtin.TextView {meta = sized(560, -1), text = sharing and gettext("BLUEPRINT_SHARE_DEPS") or ""},
+            builtin.Component {meta = sized(560, 36), layout = builtin.BoxLayout {
+                orientation = builtin.type.Orientation.Horizontal, children = {
+                    spacer(360, 36),
+                    builtin.Component {meta = sized(200, 36), layout = builtin.BoxLayout {
+                        orientation = builtin.type.Orientation.Horizontal, children = controls}},
+                },
+            }},
+        }},
+    }
+end)
+
+local function openExchange(kind, id)
+    local request = {kind = kind}
+    if kind == "share" then request.text, request.name = library.exportTemplate(id) end
+    exchangeRequest = request
+    local windowApi = gameCtx.windowContainer:get():getApi()
+    windowApi.addSingletonWindow(ExchangeWindow, {})
+    react.fireEvent(nil, "blueprintExchangeRequested", request)
+    api.gui.byId.setVisible(exchangeId, true)
+    windowApi.moveSingletonWindowToFront(ExchangeWindow)
+end
+
 local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", builtin.Window, function(_params)
     local query = react.useState("")
     local editing = react.useState(nil)
@@ -33,6 +111,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local deleting = react.useState(nil)
     local message = react.useState("")
     local change = react.useState(0)
+    local category = react.useState("")
     local function run(fn, success)
         local ok, failure = pcall(fn)
         message:set(ok and success or (tr("BLUEPRINT_OP_FAILED", {error = failure})))
@@ -42,7 +121,9 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             change:set(change:old() + 1)
         end
     end
-    react.onEvent("blueprintLibraryChanged", function()
+    react.onEvent("blueprintLibraryChanged", function(_, payload)
+        if payload and payload.message then message:set(payload.message) end
+        if payload and payload.resetFilter then category:set(""); query:set("") end
         change:set(change:old() + 1)
     end)
     react.onStep(function()
@@ -53,6 +134,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local status = message:old()
     if not ok then status = tr("BLUEPRINT_LIBRARY_READ_FAILED", {error = templates}); templates = {} end
     local rows = {}
+    local visibleCount = 0
     for _, snapshot in ipairs(templates) do
         local id = snapshot.id
         local sourceId = api.res.constructionRep.find(snapshot.constructionFileName)
@@ -61,6 +143,10 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             local parsed = core.menuCategories(api.res.constructionRep.get(sourceId), snapshot.constructionFileName)
             if #parsed > 0 then categories = parsed end
         end
+        local matches = category:old() == ""
+        for _, value in ipairs(categories) do if value == category:old() then matches = true end end
+        if matches then
+        visibleCount = visibleCount + 1
         local labels, count = {}, 0
         for _, category in ipairs(categories) do labels[#labels + 1] = categoryLabels[category] or category end
         for _ in pairs(snapshot.modules) do count = count + 1 end
@@ -101,9 +187,13 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                 textButton(gettext("BLUEPRINT_EDIT"), function() editing:set(id); draft:set(snapshot.name); descriptionDraft:set(snapshot.description or ""); deleting:set(nil) end),
                 textButton(gettext("BLUEPRINT_COPY"), function() run(function() library.duplicate(id) end, gettext("BLUEPRINT_COPIED")) end),
                 textButton(gettext("BLUEPRINT_DELETE"), function() deleting:set(id); editing:set(nil) end),
+                textButton(gettext("BLUEPRINT_SHARE"), function()
+                    local success, failure = pcall(openExchange, "share", id)
+                    if not success then message:set(tr("BLUEPRINT_OP_FAILED", {error = failure})) end
+                end),
             }
         end
-        local rowMeta = sized(850, -1)
+        local rowMeta = sized(950, -1)
         rowMeta.localKey = "template-row-" .. tostring(id)
         -- 用互不重叠的固定列分配整行宽度，按钮只在最右列内对齐。
         rows[#rows + 1] = builtin.BoxLayout {
@@ -127,20 +217,41 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                     },
                 },
                 builtin.Component {
-                    meta = sized(300, 90),
-                    layout = builtin.FloatingLayout {children = {
-                        builtin.FloatingLayoutChild {
-                            h = 1, v = 0.5,
-                            item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
-                        },
+                    meta = sized(400, 90),
+                    layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
+                        spacer(120, 90),
+                        builtin.Component {meta = sized(280, 90), layout = builtin.BoxLayout {
+                            orientation = builtin.type.Orientation.Horizontal, children = controls}},
                     }},
                 },
             },
         }
+        end
     end
     if #rows == 0 then
-        rows[1] = builtin.TextView {text = query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES")}
+        rows[1] = builtin.TextView {text = #templates == 0 and query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES")}
     end
+    local filters = {}
+    local selectedFilter = 1
+    local filterOptions = {{"", "BLUEPRINT_FILTER_ALL"}, {"rail_buildings", "BLUEPRINT_FILTER_RAIL"},
+        {"road_buildings", "BLUEPRINT_FILTER_ROAD"}, {"water_buildings", "BLUEPRINT_FILTER_WATER"},
+        {"air_buildings", "BLUEPRINT_FILTER_AIR"}, {"warehouses", "BLUEPRINT_FILTER_WAREHOUSE"}}
+    for index, option in ipairs(filterOptions) do
+        local key, label = option[1], gettext(option[2])
+        if category:old() == key then selectedFilter = index end
+        filters[#filters + 1] = {
+            meta = sized(85, 32),
+            content = builtin.TextView {text = label},
+        }
+    end
+    local categoryFilter = builtin.ToggleButtonGroup {
+        buttons = filters, selected = selectedFilter, layout = "Horizontal",
+        onValueChange = function(index)
+            -- 原生 builtin.lua 使用 ipairs 的 1-based 索引；0 是无效值。
+            local option = filterOptions[index]
+            if option then category:set(option[1]); editing:set(nil); deleting:set(nil) end
+        end,
+    }
     return builtin.Window {
         id = windowId, title = gettext("BLUEPRINT_MANAGER_TITLE"),
         initialVisible = true, closable = true, movable = true,
@@ -149,24 +260,29 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             orientation = builtin.type.Orientation.Vertical,
             children = {
                 builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
+                    builtin.Component {meta = sized(950, 34), layout = builtin.BoxLayout {
+                        orientation = builtin.type.Orientation.Horizontal,
+                        children = {spacer(830, 34),
+                            textButton(gettext("BLUEPRINT_IMPORT_TITLE"), function() openExchange("import") end, 120)},
+                    }},
                     builtin.TextInputField {
-                        meta = sized(850, 34), value = query:old(), placeholderText = gettext("BLUEPRINT_SEARCH"),
+                        meta = sized(950, 34), value = query:old(), placeholderText = gettext("BLUEPRINT_SEARCH"),
                         onTyping = function(value) query:set(value) end,
                         onValueChange = function(value) query:set(value) end,
                         onCancel = function() query:set("") end,
                     },
                     builtin.Component {
-                        meta = sized(850, 24),
-                        layout = builtin.FloatingLayout {children = {
-                            builtin.FloatingLayoutChild {
-                                h = 1, v = 0.5,
-                                item = builtin.TextView {text = tr("BLUEPRINT_COUNT", {count = #templates})},
-                            },
+                        meta = sized(950, 36),
+                        layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
+                            builtin.Component {meta = sized(600, 36), layout = builtin.BoxLayout {
+                                orientation = builtin.type.Orientation.Horizontal, children = {categoryFilter}}},
+                            spacer(250, 36),
+                            builtin.TextView {meta = sized(100, 36), text = tr("BLUEPRINT_COUNT", {count = visibleCount})},
                         }},
                     },
                 }},
                 builtin.ScrollArea {
-                    meta = sized(850, 440),
+                    meta = sized(950, 440),
                     horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
                     verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
                     content = builtin.Component {

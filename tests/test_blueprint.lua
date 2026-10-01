@@ -104,7 +104,7 @@ app = {
     saveUserdata = function(directory, file, value)
         assert(directory == "blueprint_demo" and file == "library")
         if failWrite then error("disk failure") end
-        assert(value.version == 2 and value.data)
+        assert(value.version == 4 and value.encoding == "base64" and type(value.data) == "table")
         -- 模拟只保留字符串键及连续数组的游戏文件输出。
         local function fileCopy(input)
             if type(input) ~= "table" then return input end
@@ -269,27 +269,37 @@ test("save uses read-only repositories and waits for engine acknowledgement", fu
     local cards = library.decorateDefinitions({carrier})
     assert(#cards == 1 and #cards[1].constructions == 0)
     assert(cards[1].costsYearProgression == false and type(cards[1].attributes) == "table")
-    local action = {constructionActionParams = {constructionBuilder = {height = 5, rotation = 0.5}}}
+    local action = {constructionActionParams = {constructionBuilder = {height = 5, rotation = 0.5,
+        params = {nativeChoice = 42}}}}
     assert(library.applyBuilderPayload(cards[1], action) == action)
     assert(action.constructionActionParams.constructionBuilder.constructions[1] == library.carrier)
     assert(action.constructionActionParams.constructionBuilder.height == 5)
-    assert(core.equal(transport.decode(action.constructionActionParams.constructionBuilder.params), core.toTemplate(saved, api.res)))
+    local builderParams = action.constructionActionParams.constructionBuilder.params
+    assert(builderParams.nativeChoice == 42 and builderParams.blueprintBytes == nil)
+    assert(core.equal(builderParams.blueprintTemplate, core.toTemplate(saved, api.res)))
     assert(cards[1].resName == library.resourceName(saved.id) and cards[1].constructionTemplate == -1)
     assert(#cards[1].params == #carrier.params)
     assert(cards[1].metadata.company.permitKey == "warehouse")
     assert(#carrier.params == 1 and carrier.resName == library.carrier)
     assert(library.getRevision() == 1 and #outgoing == 1)
 end)
-test("resource callback has no api or app and uses only supplied numeric parameters", function()
+test("resource callback returns supplied nested template without api or app", function()
     local exports = script("blueprint/saved_single.script.lua")
-    local params = transport.encode(core.toTemplate(disk.templates[1], api.res))
+    local params = {blueprintTemplate = core.toTemplate(disk.templates[1], api.res)}
     local previousApp, previousApi = app, api
     app, api = nil, nil
     local built = exports.createTemplateFn({}, params).constructions[1]
     app, api = previousApp, previousApi
     assert(built.params.seed == 34 and built.params.year == 1940)
     assert(built.modules[632502500] == "::/warehouses/wh_goods.module")
-    rejects(function() exports.createTemplateFn({}, {}) end, "缺少有效")
+    rejects(function() exports.createTemplateFn({}, {}) end, "缺少单座")
+    assert(built ~= params.blueprintTemplate.constructions[1])
+    built.params.seed = -1
+    assert(params.blueprintTemplate.constructions[1].params.seed == 34)
+    for _, payload in ipairs({{constructions = {}}, {constructions = {{}, {}}},
+        {constructions = {{constructionFileName = "x", params = {}, modules = false}}}}) do
+        rejects(function() exports.createTemplateFn({}, {blueprintTemplate = payload}) end, "缺少单座")
+    end
 end)
 test("existing depot templates with four saved categories are corrected in the menu", function()
     local previousDisk, previousShared = disk, copy(shared)
@@ -340,15 +350,19 @@ test("versioned persistence preserves sparse maps and reads legacy libraries", f
     local legacy = {version = 1, nextId = 2, templates = {snapshot}}
     assert(core.equal(persistence.decode(copy(legacy)), legacy))
     local encoded = persistence.encode(legacy)
-    assert(encoded.version == 2 and encoded.data)
-    for key, value in pairs(encoded.data) do
-        assert(type(key) == "string" and type(value) == "number")
-    end
+    assert(encoded.version == 4 and encoded.encoding == "base64" and type(encoded.data) == "table")
+    assert(encoded.data.warehouses[1]:match("^[A-Za-z0-9+/=]+$") and encoded.blueprintWord1 == nil)
     local restored = persistence.decode(encoded)
     assert(restored.templates[1].modules[632502500] == "::/warehouses/wh_goods.module")
     assert(restored.templates[1].cargoByTag[632502500] == "::/cargos/coal.cargo")
     assert(core.equal(restored, legacy))
+    assert(core.equal(persistence.decode({version = 2, data = transport.encode(legacy)}), legacy))
+    local base64 = require "blueprint_demo::/blueprint/base64.lua"
+    assert(core.equal(persistence.decode({version = 3, encoding = "base64",
+        data = base64.encode(transport.serialize(legacy))}), legacy))
     rejects(function() persistence.decode({version = 2, data = {}}) end, "缺少有效")
+    rejects(function() persistence.decode({version = 3, encoding = "unknown", data = "AAAA"}) end, "缺少编码")
+    rejects(function() persistence.decode({version = 3, encoding = "base64", data = "!!!!"}) end, "Base64")
 end)
 test("reload restores local library without runtime resource mutation", function()
     library.save(21)
@@ -359,7 +373,7 @@ test("reload restores local library without runtime resource mutation", function
     acknowledge()
     assert(#library.decorateDefinitions({carrier}) == 2)
     local exports = script("blueprint/saved_single.script.lua")
-    assert(exports.createTemplateFn({}, transport.encode(core.toTemplate(disk.templates[2], api.res))).constructions[1].params.platforms == 3)
+    assert(exports.createTemplateFn({}, {blueprintTemplate = core.toTemplate(disk.templates[2], api.res)}).constructions[1].params.platforms == 3)
 end)
 test("write failure never publishes or consumes an ID", function()
     local oldRevision = library.getRevision()
@@ -454,6 +468,8 @@ end)
 test("menu replacement wraps native definitions and remounts after acknowledgement", function()
     modules["blueprint_demo::/blueprint/manager.lua"] = {install = function() end, setContext = function() end}
     local events, steps, stateValue, calledParams, sent = {}, {}, nil, nil, {}
+    local listNode
+    local builtin = {List = function(params) return params end}
     local original = function() end
     local parameterWindow = function() end
     local ordinaryWindow = function() end
@@ -482,6 +498,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
             if events[name] then events[name](name, param) end
         end,
         onStep = function(fn) steps[#steps + 1] = fn end,
+        useSelfRef = function() return {get = function() return listNode end} end,
         GetRecipeName = function(recipe) return recipe == parameterWindow and "ConstructionParamsWindow" or "OtherWindow" end,
         CallOriginalRecipe = function(window, params)
             assert(window == original); calledParams = params
@@ -509,6 +526,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     end}
     function ug_require(name)
         if name:find("react.lua", 1, true) then return react end
+        if name:find("builtin.lua", 1, true) then return builtin end
         if name:find("construction_react_util", 1, true) then return ui end
         if name:find("construction_desc_react_util", 1, true) then
             return {getAttributesFromConstructionResult = function(result) return result.attributes end}
@@ -547,7 +565,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     assert(action.constructionActionParams.constructionBuilder.constructions[1] == library.carrier)
     assert(core.equal(action.constructionActionParams.constructionBuilder.builderAudioRes, card.builderAudioRes))
     assert(#card.builderAudioRes == 1)
-    assert(transport.decode(action.constructionActionParams.constructionBuilder.params).constructions[1])
+    assert(action.constructionActionParams.constructionBuilder.params.blueprintTemplate.constructions[1])
     local keyBefore = calledParams.meta.localKey
     local saved, resource = library.save(10)
     assert(not cleared)
@@ -555,10 +573,19 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     local cmd = commands[#commands]
     gameScript.handleEvent({}, engineState, cmd.src, cmd.id, cmd.name, cmd.param)
     for _ = 1, 4 do steps[1]() end
-    assert(cleared and sent.constructionMenuSelectTabForConstruction.resName == "blueprint_demo::/blueprint/save_tool.res")
+    assert(cleared and sent.constructionMenuSelectTabForConstruction.resName == resource)
     assert(installed(param) == 42 and calledParams.meta.localKey ~= keyBefore)
     assert(not oldMainRef.alive and mainRef.parameters and mainRef.parameters.owner == mainRef)
     assert(parameterRef.owner.alive and parameterKey == "blueprint-params-" .. tostring(library.getRevision()))
+    local selected, definitions = nil, {{resName = "ordinary-road-stop"}, {resName = resource}}
+    listNode = {getApi = function() return {getDefinition = function(index) return definitions[index] end} end}
+    builtin.List {meta = {tag = "construction-menu.construction-definitions-list"}, children = {1, 2},
+        onSelect = function(index) selected = index end}
+    steps[#steps]()
+    assert(selected == 2, "Refresh must select the saved blueprint rather than the first native road stop")
+    selected = nil
+    steps[#steps]()
+    assert(selected == nil, "Selection must run once without overriding later user clicks")
 end)
 test("save tooltip satisfies the game's layout-only contract", function()
     local recipes, selector = {}, nil
@@ -653,6 +680,7 @@ test("management rejects invalid targets and retains state when persistence fail
 end)
 test("manager opens independently without replacing native UI and renders searchable preview rows", function()
     local recipes, states, cursor = {}, {}, 0
+    local handlers = {}
     local function node(kind)
         return function(params) return {kind = kind, params = params} end
     end
@@ -660,9 +688,16 @@ test("manager opens independently without replacing native UI and renders search
         Orientation = {Vertical = "vertical", Horizontal = "horizontal"},
         ImageViewScaling = {AutoFit = "fit"}, ScrollBarPolicy = {AlwaysOff = "off", AsNeeded = "auto"},
     }}
-    for _, name in ipairs({"Window", "Component", "Button", "TextView", "RichTextView", "ImageView", "TextInputField", "BoxLayout", "ScrollArea", "FloatingLayout", "FloatingLayoutChild"}) do
+    for _, name in ipairs({"Window", "Component", "Button", "ToggleButtonGroup", "TextView", "RichTextView", "ImageView", "TextInputField", "BoxLayout", "ScrollArea", "FloatingLayout", "FloatingLayoutChild"}) do
         builtin[name] = node(name)
     end
+    builtin.Component = function(params)
+        local layouts = {BoxLayout = true, FloatingLayout = true, TableLayout = true, FlowLayout = true}
+        assert(params.layout and layouts[params.layout.kind], "Item of Component must be a layout")
+        return {kind = "Component", params = params}
+    end
+    rejects(function() builtin.Component {layout = builtin.ToggleButtonGroup {buttons = {}}} end,
+        "Item of Component must be a layout")
     builtin.ScrollArea = function(params)
         assert(params.content.kind == "Component", "ScrollArea does not accept a Layout as content")
         return {kind = "ScrollArea", params = params}
@@ -673,10 +708,11 @@ test("manager opens independently without replacing native UI and renders search
             cursor = cursor + 1
             local index = cursor
             if states[index] == nil then states[index] = {value = initial} end
-            return {old = function() return states[index].value end, set = function(_, value) states[index].value = value end}
+            local state = states[index]
+            return {old = function() return state.value end, set = function(_, value) state.value = value end}
         end,
-        onEvent = function() end, onStep = function() end,
-        fireEvent = function() end,
+        onEvent = function(name, fn) handlers[name] = fn end, onStep = function() end,
+        fireEvent = function(_, name, payload) if handlers[name] then handlers[name](name, payload) end end,
     }
     function ug_require(name)
         if name:find("react.lua", 1, true) then return react end
@@ -724,23 +760,25 @@ test("manager opens independently without replacing native UI and renders search
     end
     assert(#rows == #library.list() and rowColumns(rows[1])[1].kind == "ImageView")
     assert(rowColumns(rows[1])[2].params.layout.params.children[1].kind == "TextView")
-    local countLine = children[1].params.children[2].params.layout.params.children[1].params
-    assert(countLine.h == 1 and countLine.item.kind == "TextView")
-    assert(rows[1].params.children[3].params.layout.params.children[1].params.h == 1)
-    children[1].params.children[1].params.onTyping("没有这个模板")
+    local filterRow = children[1].params.children[3].params.layout.params.children
+    assert(filterRow[1].params.meta.styleSheet.size[1] == 600)
+    assert(filterRow[2].params.meta.styleSheet.size[1] == 250 and filterRow[2].params.meta.mouseTransparent)
+    assert(filterRow[3].kind == "TextView" and filterRow[3].params.meta.styleSheet.size[1] == 100)
+    assert(rows[1].params.children[3].params.layout.params.children[1].params.meta.mouseTransparent)
+    children[1].params.children[2].params.onTyping("没有这个模板")
     cursor = 0
     local empty = windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
     assert(#empty == 1 and empty[1].params.text == "没有匹配的模板")
-    children[1].params.children[1].params.onCancel()
+    children[1].params.children[2].params.onCancel()
     local function renderRows()
         cursor = 0
         return windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
     end
     local function rowControls(row)
-        return row.params.children[3].params.layout.params.children[1].params.item.params.children
+        return row.params.children[3].params.layout.params.children[2].params.layout.params.children
     end
     local firstId = library.list()[1].id
-    assert(#rowControls(renderRows()[1]) == 3)
+    assert(#rowControls(renderRows()[1]) == 4)
     assert(rowColumns(renderRows()[1])[2].params.layout.params.children[2].kind == "RichTextView")
     rowControls(renderRows()[1])[1].params.onClick()
     local editControls = rowControls(renderRows()[1])
@@ -764,6 +802,66 @@ test("manager opens independently without replacing native UI and renders search
     rowControls(renderRows()[countBefore + 1])[2].params.onClick()
     assert(#library.list() == countBefore)
     for _, saved in ipairs(library.list()) do assert(saved.id ~= copiedId) end
+    -- 分类筛选与文本搜索组合；使用原生 ToggleButtonGroup 显示选中状态。
+    cursor = 0
+    local filter = windowRecipe({}).params.content.params.children[1].params.children[3].params.layout.params.children[1].params.layout.params.children[1]
+    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 6 and filter.params.selected == 1)
+    filter.params.onValueChange(4)
+    local noWater = renderRows()
+    assert(#noWater == 1 and noWater[1].params.text == "没有匹配的模板")
+    filter.params.onValueChange(1)
+    assert(#renderRows() == #library.list())
+    -- 六个原生按钮的索引分别是 1..6，尤其检查最后的仓库按钮。
+    local categoryKeys = {"", "rail_buildings", "road_buildings", "water_buildings", "air_buildings", "warehouses"}
+    for index, key in ipairs(categoryKeys) do
+        filter.params.onValueChange(index)
+        cursor = 0
+        local filteredWindow = windowRecipe({})
+        local filterLine = filteredWindow.params.content.params.children[1].params.children[3].params.layout.params.children
+        assert(filterLine[1].params.layout.kind == "BoxLayout")
+        assert(filterLine[1].params.layout.params.children[1].params.selected == index)
+        local expected = 0
+        for _, saved in ipairs(library.list()) do
+            local sourceId = api.res.constructionRep.find(saved.constructionFileName)
+            local categories = sourceId >= 0 and core.menuCategories(api.res.constructionRep.get(sourceId), saved.constructionFileName)
+                or saved.categories
+            local matches = key == ""
+            for _, value in ipairs(categories) do if value == key then matches = true end end
+            if matches then expected = expected + 1 end
+        end
+        assert(filterLine[3].params.text == tostring(expected) .. " 个模板")
+        local actualRows = filteredWindow.params.content.params.children[2].params.content.params.layout.params.children
+        assert(expected == 0 and actualRows[1].kind == "TextView" or #actualRows == expected)
+    end
+    filter.params.onValueChange(1)
+    -- 分享弹窗不修改模板库；导入弹窗读取分享文本并新增一个独立 ID。
+    local managerRecipe, managerStates = windowRecipe, states
+    local shareText = library.exportTemplate(firstId)
+    rowControls(renderRows()[1])[4].params.onClick()
+    assert(shown["blueprint.template.exchange"])
+    states, cursor = {}, 0
+    local shareWindow = windowRecipe({})
+    local exchangeStates = states
+    assert(shareWindow.params.title == "分享蓝图")
+    assert(shareWindow.params.content.params.children[2].params.value == shareText)
+    shareWindow.params.onClose()
+    assert(not shown["blueprint.template.exchange"])
+    states, cursor, windowRecipe = managerStates, 0, managerRecipe
+    local header = windowRecipe({}).params.content.params.children[1].params.children
+    assert(header[1].params.layout.params.children[1].params.meta.styleSheet.size[1] == 830)
+    header[1].params.layout.params.children[2].params.onClick()
+    states, cursor = exchangeStates, 0
+    local importRecipe = windowRecipe
+    local importWindow = importRecipe({})
+    assert(importWindow.params.title == "导入蓝图")
+    importWindow.params.content.params.children[2].params.onTyping(shareText)
+    cursor = 0
+    importWindow = importRecipe({})
+    assert(importWindow.params.content.params.children[3].params.text:find("管理窗口修改", 1, true))
+    local beforeImport = #library.list()
+    importWindow.params.content.params.children[5].params.layout.params.children[2].params.layout.params.children[2].params.onClick()
+    assert(#library.list() == beforeImport + 1 and not shown["blueprint.template.exchange"])
+    states, cursor, windowRecipe = managerStates, 0, managerRecipe
     -- 切换语言并重新加载管理器，验证真实界面调用点和已保存名称。
     testLanguage = "en"
     modules["blueprint_demo::/blueprint/manager.lua"] = nil
@@ -773,7 +871,7 @@ test("manager opens independently without replacing native UI and renders search
     local englishWindow = windowRecipe({})
     assert(englishWindow.params.title == "Template Manager · Blueprint")
     local englishChildren = englishWindow.params.content.params.children
-    assert(englishChildren[1].params.children[1].params.placeholderText == "Search template names…")
+    assert(englishChildren[1].params.children[2].params.placeholderText == "Search template names…")
     local englishRows = englishChildren[2].params.content.params.layout.params.children
     assert(rowColumns(englishRows[1])[2].params.layout.params.children[1].params.text == library.list()[1].name)
     assert(rowControls(englishRows[1])[1].params.content.params.text == "Edit")
@@ -834,8 +932,8 @@ test("saved cards inherit building sounds and provide a native fallback", functi
     assert(cards[1] == ordinary and ordinary.builderAudioRes[1] == "ordinary_sound")
     local found = false
     for _, card in ipairs(cards) do
-        if card.blueprintPayload then
-            local payload = transport.decode(card.blueprintPayload)
+        if card.blueprintTemplate then
+            local payload = card.blueprintTemplate
             if payload.constructions[1].constructionFileName == "::/warehouses/warehouse.con" then
                 assert(card.builderAudioRes[1] == source.soundConfig.builderAudioRes)
                 found = true
@@ -846,7 +944,7 @@ test("saved cards inherit building sounds and provide a native fallback", functi
     for _, soundConfig in ipairs({{}, {builderAudioRes = ""}}) do
         source.soundConfig = soundConfig
         for _, card in ipairs(library.decorateDefinitions({carrier})) do
-            local payload = transport.decode(card.blueprintPayload)
+            local payload = card.blueprintTemplate
             if payload.constructions[1].constructionFileName == "::/warehouses/warehouse.con" then
                 assert(card.builderAudioRes[1] == "::/gui/construction/sound/buildoze_construction_large.builder_audio")
             end
@@ -895,5 +993,185 @@ test("legacy libraries accept an optional name counter and reject invalid counte
         invalid.nextNameNumber = value
         rejects(function() runtime.validateLibrary(invalid) end, "模板名称序号无效")
     end
+end)
+test("Base64 follows standard vectors and preserves all byte values", function()
+    local base64 = require "blueprint_demo::/blueprint/base64.lua"
+    local vectors = {{"", ""}, {"f", "Zg=="}, {"fo", "Zm8="}, {"foo", "Zm9v"},
+        {"foob", "Zm9vYg=="}, {"fooba", "Zm9vYmE="}, {"foobar", "Zm9vYmFy"}}
+    for _, vector in ipairs(vectors) do
+        assert(base64.encode(vector[1]) == vector[2])
+        assert(base64.decode(vector[2]) == vector[1])
+    end
+    local bytes = {}
+    for i = 0, 255 do bytes[#bytes + 1] = string.char(i) end
+    local binary = table.concat(bytes) .. "中文\0\n"
+    assert(base64.decode(base64.encode(binary)) == binary)
+    for _, invalid in ipairs({"A", "!!!!", "=AAA", "A===", "AA=A", "AA==AAAA", "AB==", "AAB="}) do
+        rejects(function() base64.decode(invalid) end, "Base64")
+    end
+end)
+test("Base64 library preserves sparse keys and integer precision without evaluating Lua", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local value = {version = 1, nextId = 2, templates = {copy(snapshot)}}
+    value.templates[1].params.preciseInteger = 9007199254740993
+    value.templates[1].params.preciseFloat = 0.12345678901234567
+    value.templates[1].params.enabled = true
+    value.templates[1].params.label = "中文 % {name} \0\n return os.execute('invalid')"
+    local encoded = persistence.encode(value)
+    assert(core.equal(persistence.decode(encoded), value))
+    assert(encoded.data.warehouses[1]:find("blueprintWord", 1, true) == nil)
+    rejects(function() transport.deserialize("return os.execute('invalid')") end, "类型无效")
+end)
+test("placement passes nested objects without any numeric codec", function()
+    acknowledge()
+    local encode, decode = transport.encode, transport.decode
+    transport.encode = function() error("Numeric encode must not run during placement") end
+    transport.decode = function() error("Numeric decode must not run during placement") end
+    local card = library.decorateDefinitions({carrier})[1]
+    assert(card and card.blueprintTemplate and card.blueprintPayload == nil)
+    local action = {constructionActionParams = {constructionBuilder = {
+        height = 3, rotation = 1.2, params = {paramX = 1, year = 2000}}}}
+    library.applyBuilderPayload(card, action)
+    local builder = action.constructionActionParams.constructionBuilder
+    local exports = script("blueprint/saved_single.script.lua")
+    local template = exports.createTemplateFn({}, builder.params)
+    assert(core.equal(template, card.blueprintTemplate))
+    assert(builder.height == 3 and builder.rotation == 1.2 and builder.params.paramX == 1)
+    local slot, module = next(card.blueprintTemplate.constructions[1].modules)
+    assert(template.constructions[1].modules[slot] == module)
+    builder.params.blueprintTemplate.constructions[1].params.seed = -999
+    assert(card.blueprintTemplate.constructions[1].params.seed ~= -999)
+    transport.encode, transport.decode = encode, decode
+end)
+test("legacy numeric construction parameters still work without api or app", function()
+    local template = core.toTemplate(snapshot, api.res)
+    local packet = transport.encode(template)
+    local action = {constructionActionParams = {constructionBuilder = {height = 5, rotation = 0.5}}}
+    library.applyBuilderPayload({blueprintPayload = packet}, action)
+    local builder = action.constructionActionParams.constructionBuilder
+    assert(core.equal(builder.params, packet) and builder.params ~= packet)
+    assert(builder.height == 5 and builder.rotation == 0.5)
+    local exports = script("blueprint/saved_single.script.lua")
+    local previousApp, previousApi = app, api
+    app, api = nil, nil
+    local restored = exports.createTemplateFn({}, builder.params)
+    app, api = previousApp, previousApi
+    assert(core.equal(restored, template))
+    assert(restored.constructions[1].modules[632502500] == "::/warehouses/wh_goods.module")
+    local broken = copy(packet)
+    broken.blueprintWord1 = nil
+    rejects(function() exports.createTemplateFn({}, broken) end, "不完整")
+    local mixed = copy(packet)
+    mixed.blueprintTemplate = {constructions = {}}
+    rejects(function() exports.createTemplateFn({}, mixed) end, "缺少单座")
+    mixed.blueprintTemplate = template
+    assert(core.equal(exports.createTemplateFn({}, mixed), template))
+end)
+test("version 1, 2 and 3 files load unchanged and migrate only on a successful edit", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local previousDisk, loadUserdata, saveUserdata = disk, app.loadUserdata, app.saveUserdata
+    local original = {version = 1, nextId = 2, templates = {copy(snapshot)}}
+    original.templates[1].params.preciseInteger = 9007199254740993
+    for _, version in ipairs({1, 2, 3}) do
+        local stored = version == 1 and copy(original) or {version = 2, data = transport.encode(original)}
+        if version == 3 then
+            local base64 = require "blueprint_demo::/blueprint/base64.lua"
+            stored = {version = 3, encoding = "base64", data = base64.encode(transport.serialize(original))}
+        end
+        disk = copy(original)
+        app.loadUserdata = function() return copy(stored) end
+        app.saveUserdata = function(directory, file, value)
+            saveUserdata(directory, file, value)
+            stored = copy(value)
+        end
+        modules["blueprint_demo::/blueprint/library.lua"] = nil
+        local reloaded = require "blueprint_demo::/blueprint/library.lua"
+        local oldWrites = writes
+        assert(core.equal(reloaded.list(), original.templates))
+        assert(writes == oldWrites and stored.version == version)
+        failWrite = true
+        rejects(function() reloaded.rename(snapshot.id, "迁移模板") end, "disk failure")
+        failWrite = false
+        assert(stored.version == version and core.equal(reloaded.list(), original.templates))
+        reloaded.rename(snapshot.id, "迁移模板")
+        assert(stored.version == 4 and stored.encoding == "base64" and type(stored.data) == "table")
+        local restored = persistence.decode(stored)
+        assert(restored.templates[1].name == "迁移模板")
+        restored.templates[1].name = original.templates[1].name
+        assert(core.equal(restored, original))
+    end
+    disk, app.loadUserdata, app.saveUserdata = previousDisk, loadUserdata, saveUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+test("version 4 groups independently decoded templates and preserves cross-category order", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local base64 = require "blueprint_demo::/blueprint/base64.lua"
+    local warehouse = copy(snapshot)
+    local rail = copy(snapshot)
+    rail.id, rail.constructionFileName, rail.categories = 2, "other_mod::/station.con", {"rail_buildings"}
+    local road = copy(snapshot)
+    road.id, road.constructionFileName = 3, "::/stations/street/modular_street_station/modular_terminal.con"
+    road.categories = {"rail_buildings", "road_buildings", "water_buildings", "air_buildings"}
+    local custom = copy(snapshot)
+    custom.id, custom.constructionFileName, custom.categories = 4, "other_mod::/custom.con", {"custom_buildings"}
+    local original = {version = 1, nextId = 7, nextNameNumber = 3,
+        templates = {rail, warehouse, custom, road}}
+    local encoded = persistence.encode(original)
+    assert(encoded.version == 4 and encoded.nextId == 7 and encoded.nextNameNumber == 3)
+    assert(#encoded.data.rail_buildings == 1 and #encoded.data.warehouses == 1)
+    assert(#encoded.data.road_buildings == 1 and #encoded.data.custom_buildings == 1)
+    assert(#encoded.data.air_buildings == 0 and #encoded.data.water_buildings == 0)
+    assert(core.equal(encoded.templateOrder, {2, 1, 4, 3}))
+    assert(core.equal(transport.deserialize(base64.decode(encoded.data.road_buildings[1])), road))
+    assert(core.equal(persistence.decode(encoded), original))
+    local before = encoded.data.rail_buildings[1]
+    warehouse.name = "独立修改仓库"
+    assert(persistence.encode(original).data.rail_buildings[1] == before)
+    local empty = {version = 1, nextId = 100, templates = {}}
+    assert(core.equal(persistence.decode(persistence.encode(empty)), empty))
+end)
+test("version 4 rejects holes, invalid groups, duplicate IDs and missing order entries", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local valid = persistence.encode({version = 1, nextId = 2, templates = {snapshot}})
+    local broken = copy(valid)
+    broken.data.warehouses[3], broken.data.warehouses[1] = broken.data.warehouses[1], nil
+    rejects(function() persistence.decode(broken) end, "不连续")
+    broken = copy(valid); broken.data.warehouses.extra = "x"
+    rejects(function() persistence.decode(broken) end, "索引无效")
+    broken = copy(valid); broken.data.warehouses[2] = broken.data.warehouses[1]
+    rejects(function() persistence.decode(broken) end, "重复")
+    broken = copy(valid); broken.data.road_buildings = broken.data.warehouses; broken.data.warehouses = {}
+    rejects(function() persistence.decode(broken) end, "分类数组无效")
+    broken = copy(valid); broken.templateOrder = {}
+    rejects(function() persistence.decode(broken) end, "不连续")
+    broken = copy(valid); broken.templateOrder[1] = 999
+    rejects(function() persistence.decode(broken) end, "重复或无效")
+    broken = copy(valid); broken.data.warehouses[1] = "!!!!"
+    rejects(function() persistence.decode(broken) end, "Base64")
+end)
+test("sharing exports one v4 element and import assigns a fresh ID with exact configuration", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local original = library.list()[1]
+    local text, name = library.exportTemplate(original.id)
+    assert(name == original.name and core.equal(persistence.decodeTemplate(text), original))
+    local preview = library.previewImport("\n " .. text .. "\r\n")
+    assert(core.equal(preview, original))
+    local beforeId, beforeName = disk.nextId, disk.nextNameNumber
+    local imported = library.importTemplate(text)
+    assert(imported.id == beforeId and disk.nextId == beforeId + 1 and disk.nextNameNumber == beforeName)
+    imported.id = original.id
+    assert(core.equal(imported, original))
+    local nextId, oldWrites = disk.nextId, writes
+    rejects(function() library.importTemplate("!!!!") end, "Base64")
+    failWrite = true
+    rejects(function() library.importTemplate(text) end, "disk failure")
+    failWrite = false
+    assert(disk.nextId == nextId and writes == oldWrites)
+    local missing = copy(original)
+    missing.constructionFileName = "missing_mod::/station.con"
+    local missingText = persistence.encodeTemplate(missing)
+    local _, dependencies = library.previewImport(missingText)
+    assert(#dependencies > 0)
+    assert(library.importTemplate(missingText).constructionFileName == missing.constructionFileName)
 end)
 print(tostring(passed) .. " Lua contract tests passed")

@@ -3,6 +3,8 @@ local react = ug_require "::/gui/main/react.lua"
 local originalWindow = ug_require "::/gui/construction/construction.tl"
 local library = require "blueprint_demo::/blueprint/library.lua"
 local constructionUi = ug_require "::/gui/construction/construction_react_util.tl"
+local builtin = ug_require "::/gui/main/builtin.lua"
+local selectionTarget
 local lastSyncError
 local manager = require "blueprint_demo::/blueprint/manager.lua"
 local hookedContainers = setmetatable({}, {__mode = "k"})
@@ -44,7 +46,10 @@ local RefreshableWindow = react.RegisterWrapperRecipe("BlueprintConstructionWind
     if not ok then debugPrint("[Blueprint] " .. tr("BLUEPRINT_LIBRARY_LOAD_FAILED", {error = err})) end
 
     react.onEvent("blueprintLibraryChanged", function(_name, event)
-        pending:set(event.focusResName)
+        if event.focusResName then
+            pending:set(event.focusResName)
+            selectionTarget = nil
+        end
         ticks:set(0)
         revision:set(library.getRevision())
         -- 与原生 propagateActionFn 一样，动作回调在工具栈未就绪时可以缺省。
@@ -54,6 +59,10 @@ local RefreshableWindow = react.RegisterWrapperRecipe("BlueprintConstructionWind
         end
     end)
     react.onStep(function()
+        if selectionTarget then
+            selectionTarget.ticks = selectionTarget.ticks + 1
+            if selectionTarget.ticks > 120 then selectionTarget = nil end
+        end
         local success, failure = pcall(library.pollSync)
         if not success then
             local message = tostring(failure)
@@ -70,6 +79,7 @@ local RefreshableWindow = react.RegisterWrapperRecipe("BlueprintConstructionWind
         if ticks:get() < 3 then return end
         local resName = pending:get()
         pending:set(nil)
+        selectionTarget = {resName = resName, ticks = 0}
         api.gui.byId.setVisible("menu.construction.react", true)
         react.fireEvent(nil, "constructionMenuActive", {active = true})
         react.fireEvent(nil, "constructionMenuSelectTabForConstruction", {resName = resName})
@@ -84,6 +94,29 @@ end)
 function data()
     return {install = function(replacementApi)
         manager.install()
+        local originalList = builtin.List
+        builtin.List = function(params, ...)
+            if params.meta and params.meta.tag == "construction-menu.construction-definitions-list" then
+                -- 此调用仍在原生 ConstructionDefinitionsList 的 recipe 上下文中。
+                -- 使用它的公开 getDefinition API 和原生 onSelect 回调，保持卡片、参数和动作同步。
+                local listRef = react.useSelfRef()
+                react.onStep(function()
+                    if not selectionTarget then return end
+                    local node = listRef:get()
+                    local listApi = node and node:getApi()
+                    if not listApi then return end
+                    for index = 1, #(params.children or {}) do
+                        local definition = listApi.getDefinition(index)
+                        if definition and definition.resName == selectionTarget.resName then
+                            selectionTarget = nil
+                            params.onSelect(index)
+                            return
+                        end
+                    end
+                end)
+            end
+            return originalList(params, ...)
+        end
         local originalDefinitions = constructionUi.getConstructionDefinitions
         constructionUi.getConstructionDefinitions = function(...)
             return library.decorateDefinitions(originalDefinitions(...))
