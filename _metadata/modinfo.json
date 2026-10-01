@@ -5,7 +5,7 @@
             "role": "CREATOR"
         }
     ],
-    "description": "将已有的玩家建筑保存为可重复使用的蓝图，保留建筑参数与模块，并从建造菜单中再次放置。支持搜索模板、编辑名称与描述、复制和删除，模板库可跨地图使用。<br><hr><br>Save existing player buildings as reusable blueprints, preserving their parameters and modules for placement from the construction menu. Search templates, edit names and descriptions, duplicate or delete entries, and reuse your local library across maps.<br><br>GitHub: <a href=\"https://github.com/1328411791/tpf3-blueprint\">https://github.com/1328411791/tpf3-blueprint</a>",
+    "description": "将已有的玩家建筑保存为可重复使用的蓝图，保留建筑参数与模块，并从建造菜单中再次放置。支持搜索模板、编辑名称与描述、复制和删除，模板库可跨地图使用。<br><br>支持保存带有模组组件的车站；保存后移除相关模组，可能导致蓝图无法正常加载或放置。<br><br>本 Mod 仍处于早期开发阶段，存在较多 Bug。<br><hr><br>Save existing player buildings as reusable blueprints, preserving their parameters and modules for placement from the construction menu. Search templates, edit names and descriptions, duplicate or delete entries, and reuse your local library across maps.<br><br>Stations with modded components can be saved. Removing the required mods afterward may cause problems when loading or placing these blueprints.<br><br>This mod is still in early development and has many bugs.<br><br>GitHub: <a href=\"https://github.com/1328411791/tpf3-blueprint\">https://github.com/1328411791/tpf3-blueprint</a>",
     "name": "Blueprint",
     "summary": "Save and manage reusable building templates in the construction menu.",
     "tags": [
