@@ -81,7 +81,7 @@ function library.save(entity)
     candidate.templates[#candidate.templates + 1] = snapshot
     candidate.nextId = candidate.nextId + 1
     candidate.nextNameNumber = nameNumber + 1
-    commit(candidate, snapshot.id, "blueprint_demo::/blueprint/save_tool.res")
+    commit(candidate, snapshot.id, library.resourceName(snapshot.id))
     debugPrint("[Blueprint] " .. tr("BLUEPRINT_SAVED_WAIT", {name = snapshot.name}))
     return snapshot, library.resourceName(snapshot.id)
 end

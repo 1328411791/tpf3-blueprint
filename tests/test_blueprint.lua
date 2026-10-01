@@ -468,6 +468,8 @@ end)
 test("menu replacement wraps native definitions and remounts after acknowledgement", function()
     modules["blueprint_demo::/blueprint/manager.lua"] = {install = function() end, setContext = function() end}
     local events, steps, stateValue, calledParams, sent = {}, {}, nil, nil, {}
+    local listNode
+    local builtin = {List = function(params) return params end}
     local original = function() end
     local parameterWindow = function() end
     local ordinaryWindow = function() end
@@ -496,6 +498,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
             if events[name] then events[name](name, param) end
         end,
         onStep = function(fn) steps[#steps + 1] = fn end,
+        useSelfRef = function() return {get = function() return listNode end} end,
         GetRecipeName = function(recipe) return recipe == parameterWindow and "ConstructionParamsWindow" or "OtherWindow" end,
         CallOriginalRecipe = function(window, params)
             assert(window == original); calledParams = params
@@ -523,6 +526,7 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     end}
     function ug_require(name)
         if name:find("react.lua", 1, true) then return react end
+        if name:find("builtin.lua", 1, true) then return builtin end
         if name:find("construction_react_util", 1, true) then return ui end
         if name:find("construction_desc_react_util", 1, true) then
             return {getAttributesFromConstructionResult = function(result) return result.attributes end}
@@ -569,10 +573,19 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     local cmd = commands[#commands]
     gameScript.handleEvent({}, engineState, cmd.src, cmd.id, cmd.name, cmd.param)
     for _ = 1, 4 do steps[1]() end
-    assert(cleared and sent.constructionMenuSelectTabForConstruction.resName == "blueprint_demo::/blueprint/save_tool.res")
+    assert(cleared and sent.constructionMenuSelectTabForConstruction.resName == resource)
     assert(installed(param) == 42 and calledParams.meta.localKey ~= keyBefore)
     assert(not oldMainRef.alive and mainRef.parameters and mainRef.parameters.owner == mainRef)
     assert(parameterRef.owner.alive and parameterKey == "blueprint-params-" .. tostring(library.getRevision()))
+    local selected, definitions = nil, {{resName = "ordinary-road-stop"}, {resName = resource}}
+    listNode = {getApi = function() return {getDefinition = function(index) return definitions[index] end} end}
+    builtin.List {meta = {tag = "construction-menu.construction-definitions-list"}, children = {1, 2},
+        onSelect = function(index) selected = index end}
+    steps[#steps]()
+    assert(selected == 2, "Refresh must select the saved blueprint rather than the first native road stop")
+    selected = nil
+    steps[#steps]()
+    assert(selected == nil, "Selection must run once without overriding later user clicks")
 end)
 test("save tooltip satisfies the game's layout-only contract", function()
     local recipes, selector = {}, nil
