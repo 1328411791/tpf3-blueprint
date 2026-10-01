@@ -499,7 +499,10 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     }
     local ui = {
         getConstructionDefinitions = function() return {carrier} end,
-        getActionParams = function() return {constructionActionParams = {constructionBuilder = {height = 3}}} end,
+        getActionParams = function(definition)
+            return {constructionActionParams = {constructionBuilder = {height = 3,
+                builderAudioRes = definition.builderAudioRes}}}
+        end,
     }
     api.engine.util.construction = {getConstructionResult = function(name, index, params)
         error("Menu refresh must not evaluate building scripts")
@@ -542,6 +545,8 @@ test("menu replacement wraps native definitions and remounts after acknowledgeme
     assert(type(card.attributes) == "table" and not card.costsYearProgression)
     local action = ui.getActionParams(card)
     assert(action.constructionActionParams.constructionBuilder.constructions[1] == library.carrier)
+    assert(core.equal(action.constructionActionParams.constructionBuilder.builderAudioRes, card.builderAudioRes))
+    assert(#card.builderAudioRes == 1)
     assert(transport.decode(action.constructionActionParams.constructionBuilder.params).constructions[1])
     local keyBefore = calledParams.meta.localKey
     local saved, resource = library.save(10)
@@ -818,5 +823,77 @@ test("translations reorder named values, preserve user text and fall back to Eng
     TRANSLATIONS.test = nil
     testLanguage = "zh_CN"
     assert(tr("BLUEPRINT_COUNT", {count = 3}) == "3 个模板")
+end)
+test("saved cards inherit building sounds and provide a native fallback", function()
+    acknowledge()
+    local source = api.res.constructionRep.get(0)
+    local previous = source.soundConfig
+    source.soundConfig = {builderAudioRes = "other_mod::/warehouse.builder_audio"}
+    local ordinary = {resName = "ordinary", builderAudioRes = {"ordinary_sound"}}
+    local cards = library.decorateDefinitions({ordinary, carrier})
+    assert(cards[1] == ordinary and ordinary.builderAudioRes[1] == "ordinary_sound")
+    local found = false
+    for _, card in ipairs(cards) do
+        if card.blueprintPayload then
+            local payload = transport.decode(card.blueprintPayload)
+            if payload.constructions[1].constructionFileName == "::/warehouses/warehouse.con" then
+                assert(card.builderAudioRes[1] == source.soundConfig.builderAudioRes)
+                found = true
+            end
+        end
+    end
+    assert(found)
+    for _, soundConfig in ipairs({{}, {builderAudioRes = ""}}) do
+        source.soundConfig = soundConfig
+        for _, card in ipairs(library.decorateDefinitions({carrier})) do
+            local payload = transport.decode(card.blueprintPayload)
+            if payload.constructions[1].constructionFileName == "::/warehouses/warehouse.con" then
+                assert(card.builderAudioRes[1] == "::/gui/construction/sound/buildoze_construction_large.builder_audio")
+            end
+        end
+    end
+    source.soundConfig = previous
+    assert(carrier.builderAudioRes == nil)
+end)
+test("default names reset only when empty and remain separate from internal IDs", function()
+    local nextId = disk.nextId
+    for _, saved in ipairs(library.list()) do library.delete(saved.id) end
+    assert(disk.nextId == nextId and disk.nextNameNumber == 1)
+    local first = library.save(10)
+    assert(first.id == nextId and first.name == "货物仓库 · 模板 1")
+    local duplicate = library.duplicate(first.id)
+    assert(duplicate.id == nextId + 1 and disk.nextNameNumber == 2)
+    local second = library.save(10)
+    assert(second.id == nextId + 2 and second.name == "货物仓库 · 模板 2")
+    library.delete(first.id)
+    assert(disk.nextNameNumber == 3)
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    library = require "blueprint_demo::/blueprint/library.lua"
+    failWrite = true
+    rejects(function() library.save(10) end, "disk failure")
+    failWrite = false
+    assert(disk.nextNameNumber == 3 and disk.nextId == nextId + 3)
+    local third = library.save(10)
+    assert(third.name == "货物仓库 · 模板 3" and third.id == nextId + 3)
+    acknowledge()
+    assert(shared.library.nextNameNumber == 4)
+end)
+test("legacy libraries accept an optional name counter and reject invalid counters", function()
+    disk = {version = 1, nextId = 17, templates = {}}
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    library = require "blueprint_demo::/blueprint/library.lua"
+    local saved = library.save(10)
+    assert(saved.id == 17 and saved.name == "货物仓库 · 模板 1" and disk.nextNameNumber == 2)
+    disk = {version = 1, nextId = 18, templates = {saved}}
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    library = require "blueprint_demo::/blueprint/library.lua"
+    library.duplicate(saved.id)
+    assert(disk.nextNameNumber == 18)
+    assert(library.save(10).name == "货物仓库 · 模板 18")
+    for _, value in ipairs({0, -1, 1.5, "1", math.huge}) do
+        local invalid = copy(disk)
+        invalid.nextNameNumber = value
+        rejects(function() runtime.validateLibrary(invalid) end, "模板名称序号无效")
+    end
 end)
 print(tostring(passed) .. " Lua contract tests passed")

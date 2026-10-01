@@ -195,7 +195,7 @@ function core.templateImages(snapshot)
         snapshot.previewIcon and snapshot.previewIcon ~= "" and snapshot.previewIcon or "::/warehouses/icons/wh_goods_preview.tga"
 end
 
-function core.capture(entity, id, engine, types, res, transportModes)
+function core.capture(entity, id, engine, types, res, transportModes, nameNumber)
     local root, reason = core.resolveConstruction(entity, engine, types)
     assert(root, reason or gettext("BLUEPRINT_SELECT_BUILDING"))
     local con = engine.getComponent(root, types.CONSTRUCTION)
@@ -225,7 +225,7 @@ function core.capture(entity, id, engine, types, res, transportModes)
     local named = engine.getComponent(root, types.NAME)
     local name = named and named.name or description.name or gettext("BLUEPRINT_BUILDING")
     local snapshot = {
-        version = 1, id = id, name = tr("BLUEPRINT_DEFAULT_NAME", {name = name, id = id}),
+        version = 1, id = id, name = tr("BLUEPRINT_DEFAULT_NAME", {name = name, id = nameNumber or id}),
         constructionFileName = fileName, params = params, modules = modules,
         cargoByTag = cargoByTag, categories = categories,
         icon = description.icon or "::/warehouses/icons/wh_goods.tga",

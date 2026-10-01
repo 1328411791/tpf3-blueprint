@@ -10,6 +10,9 @@ function runtime.validateLibrary(candidate)
     assert(type(candidate) == "table" and candidate.version == 1, gettext("BLUEPRINT_LIBRARY_VERSION"))
     assert(type(candidate.templates) == "table", gettext("BLUEPRINT_MISSING_TEMPLATES"))
     assert(type(candidate.nextId) == "number" and candidate.nextId % 1 == 0 and candidate.nextId >= 1, gettext("BLUEPRINT_LIBRARY_ID"))
+    assert(candidate.nextNameNumber == nil or type(candidate.nextNameNumber) == "number"
+        and candidate.nextNameNumber % 1 == 0 and candidate.nextNameNumber >= 1,
+        gettext("BLUEPRINT_NAME_SEQUENCE"))
     local ids, count = {}, 0
     for index in pairs(candidate.templates) do
         assert(type(index) == "number" and index >= 1 and index % 1 == 0, gettext("BLUEPRINT_LIST_INDEX"))
