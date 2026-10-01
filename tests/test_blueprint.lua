@@ -678,6 +678,13 @@ test("manager opens independently without replacing native UI and renders search
     for _, name in ipairs({"Window", "Component", "Button", "ToggleButtonGroup", "TextView", "RichTextView", "ImageView", "TextInputField", "BoxLayout", "ScrollArea", "FloatingLayout", "FloatingLayoutChild"}) do
         builtin[name] = node(name)
     end
+    builtin.Component = function(params)
+        local layouts = {BoxLayout = true, FloatingLayout = true, TableLayout = true, FlowLayout = true}
+        assert(params.layout and layouts[params.layout.kind], "Item of Component must be a layout")
+        return {kind = "Component", params = params}
+    end
+    rejects(function() builtin.Component {layout = builtin.ToggleButtonGroup {buttons = {}}} end,
+        "Item of Component must be a layout")
     builtin.ScrollArea = function(params)
         assert(params.content.kind == "Component", "ScrollArea does not accept a Layout as content")
         return {kind = "ScrollArea", params = params}
@@ -740,9 +747,11 @@ test("manager opens independently without replacing native UI and renders search
     end
     assert(#rows == #library.list() and rowColumns(rows[1])[1].kind == "ImageView")
     assert(rowColumns(rows[1])[2].params.layout.params.children[1].kind == "TextView")
-    local countLine = children[1].params.children[3].params.layout.params.children[2].params
-    assert(countLine.h == 1 and countLine.item.kind == "TextView")
-    assert(rows[1].params.children[3].params.layout.params.children[1].params.h == 1)
+    local filterRow = children[1].params.children[3].params.layout.params.children
+    assert(filterRow[1].params.meta.styleSheet.size[1] == 600)
+    assert(filterRow[2].params.meta.styleSheet.size[1] == 250 and filterRow[2].params.meta.mouseTransparent)
+    assert(filterRow[3].kind == "TextView" and filterRow[3].params.meta.styleSheet.size[1] == 100)
+    assert(rows[1].params.children[3].params.layout.params.children[1].params.meta.mouseTransparent)
     children[1].params.children[2].params.onTyping("没有这个模板")
     cursor = 0
     local empty = windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
@@ -753,7 +762,7 @@ test("manager opens independently without replacing native UI and renders search
         return windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
     end
     local function rowControls(row)
-        return row.params.children[3].params.layout.params.children[1].params.item.params.children
+        return row.params.children[3].params.layout.params.children[2].params.layout.params.children
     end
     local firstId = library.list()[1].id
     assert(#rowControls(renderRows()[1]) == 4)
@@ -782,13 +791,36 @@ test("manager opens independently without replacing native UI and renders search
     for _, saved in ipairs(library.list()) do assert(saved.id ~= copiedId) end
     -- 分类筛选与文本搜索组合；使用原生 ToggleButtonGroup 显示选中状态。
     cursor = 0
-    local filter = windowRecipe({}).params.content.params.children[1].params.children[3].params.layout.params.children[1].params.item
-    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 6 and filter.params.selected == 0)
-    filter.params.onValueChange(3)
+    local filter = windowRecipe({}).params.content.params.children[1].params.children[3].params.layout.params.children[1].params.layout.params.children[1]
+    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 6 and filter.params.selected == 1)
+    filter.params.onValueChange(4)
     local noWater = renderRows()
     assert(#noWater == 1 and noWater[1].params.text == "没有匹配的模板")
-    filter.params.onValueChange(0)
+    filter.params.onValueChange(1)
     assert(#renderRows() == #library.list())
+    -- 六个原生按钮的索引分别是 1..6，尤其检查最后的仓库按钮。
+    local categoryKeys = {"", "rail_buildings", "road_buildings", "water_buildings", "air_buildings", "warehouses"}
+    for index, key in ipairs(categoryKeys) do
+        filter.params.onValueChange(index)
+        cursor = 0
+        local filteredWindow = windowRecipe({})
+        local filterLine = filteredWindow.params.content.params.children[1].params.children[3].params.layout.params.children
+        assert(filterLine[1].params.layout.kind == "BoxLayout")
+        assert(filterLine[1].params.layout.params.children[1].params.selected == index)
+        local expected = 0
+        for _, saved in ipairs(library.list()) do
+            local sourceId = api.res.constructionRep.find(saved.constructionFileName)
+            local categories = sourceId >= 0 and core.menuCategories(api.res.constructionRep.get(sourceId), saved.constructionFileName)
+                or saved.categories
+            local matches = key == ""
+            for _, value in ipairs(categories) do if value == key then matches = true end end
+            if matches then expected = expected + 1 end
+        end
+        assert(filterLine[3].params.text == tostring(expected) .. " 个模板")
+        local actualRows = filteredWindow.params.content.params.children[2].params.content.params.layout.params.children
+        assert(expected == 0 and actualRows[1].kind == "TextView" or #actualRows == expected)
+    end
+    filter.params.onValueChange(1)
     -- 分享弹窗不修改模板库；导入弹窗读取分享文本并新增一个独立 ID。
     local managerRecipe, managerStates = windowRecipe, states
     local shareText = library.exportTemplate(firstId)
@@ -803,7 +835,8 @@ test("manager opens independently without replacing native UI and renders search
     assert(not shown["blueprint.template.exchange"])
     states, cursor, windowRecipe = managerStates, 0, managerRecipe
     local header = windowRecipe({}).params.content.params.children[1].params.children
-    header[1].params.layout.params.children[1].params.item.params.onClick()
+    assert(header[1].params.layout.params.children[1].params.meta.styleSheet.size[1] == 830)
+    header[1].params.layout.params.children[2].params.onClick()
     states, cursor = exchangeStates, 0
     local importRecipe = windowRecipe
     local importWindow = importRecipe({})
@@ -813,7 +846,7 @@ test("manager opens independently without replacing native UI and renders search
     importWindow = importRecipe({})
     assert(importWindow.params.content.params.children[3].params.text:find("管理窗口修改", 1, true))
     local beforeImport = #library.list()
-    importWindow.params.content.params.children[5].params.layout.params.children[1].params.item.params.children[2].params.onClick()
+    importWindow.params.content.params.children[5].params.layout.params.children[2].params.layout.params.children[2].params.onClick()
     assert(#library.list() == beforeImport + 1 and not shown["blueprint.template.exchange"])
     states, cursor, windowRecipe = managerStates, 0, managerRecipe
     -- 切换语言并重新加载管理器，验证真实界面调用点和已保存名称。

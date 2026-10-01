@@ -10,8 +10,14 @@ local windowId = "blueprint.template.manager"
 local function sized(width, height)
     return {styleSheet = styleutil.makeStyle {size = {width, height}}}
 end
-local function textButton(label, onClick)
-    return builtin.Button {content = builtin.TextView {text = label}, onClick = onClick}
+local function textButton(label, onClick, width)
+    return builtin.Button {meta = width and sized(width, 32) or nil,
+        content = builtin.TextView {text = label}, onClick = onClick}
+end
+local function spacer(width, height)
+    local meta = sized(width, height)
+    meta.mouseTransparent = true
+    return builtin.Component {meta = meta, layout = builtin.BoxLayout {children = {}}}
 end
 local function close()
     api.gui.byId.setVisible(windowId, false)
@@ -75,10 +81,13 @@ local ExchangeWindow = react.RegisterWrapperRecipe("BlueprintTemplateExchange", 
             },
             builtin.TextView {meta = sized(560, -1), text = sharing and gettext("BLUEPRINT_SHARE_COPY_HINT") or feedback:old()},
             builtin.TextView {meta = sized(560, -1), text = sharing and gettext("BLUEPRINT_SHARE_DEPS") or ""},
-            builtin.Component {meta = sized(560, 36), layout = builtin.FloatingLayout {children = {
-                builtin.FloatingLayoutChild {h = 1, v = 0.5,
-                    item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls}},
-            }}},
+            builtin.Component {meta = sized(560, 36), layout = builtin.BoxLayout {
+                orientation = builtin.type.Orientation.Horizontal, children = {
+                    spacer(360, 36),
+                    builtin.Component {meta = sized(200, 36), layout = builtin.BoxLayout {
+                        orientation = builtin.type.Orientation.Horizontal, children = controls}},
+                },
+            }},
         }},
     }
 end)
@@ -209,11 +218,10 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                 },
                 builtin.Component {
                     meta = sized(400, 90),
-                    layout = builtin.FloatingLayout {children = {
-                        builtin.FloatingLayoutChild {
-                            h = 1, v = 0.5,
-                            item = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = controls},
-                        },
+                    layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
+                        spacer(120, 90),
+                        builtin.Component {meta = sized(280, 90), layout = builtin.BoxLayout {
+                            orientation = builtin.type.Orientation.Horizontal, children = controls}},
                     }},
                 },
             },
@@ -224,13 +232,13 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         rows[1] = builtin.TextView {text = #templates == 0 and query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES")}
     end
     local filters = {}
-    local selectedFilter = 0
+    local selectedFilter = 1
     local filterOptions = {{"", "BLUEPRINT_FILTER_ALL"}, {"rail_buildings", "BLUEPRINT_FILTER_RAIL"},
         {"road_buildings", "BLUEPRINT_FILTER_ROAD"}, {"water_buildings", "BLUEPRINT_FILTER_WATER"},
         {"air_buildings", "BLUEPRINT_FILTER_AIR"}, {"warehouses", "BLUEPRINT_FILTER_WAREHOUSE"}}
     for index, option in ipairs(filterOptions) do
         local key, label = option[1], gettext(option[2])
-        if category:old() == key then selectedFilter = index - 1 end
+        if category:old() == key then selectedFilter = index end
         filters[#filters + 1] = {
             meta = sized(85, 32),
             content = builtin.TextView {text = label},
@@ -239,7 +247,8 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local categoryFilter = builtin.ToggleButtonGroup {
         buttons = filters, selected = selectedFilter, layout = "Horizontal",
         onValueChange = function(index)
-            local option = filterOptions[index + 1]
+            -- 原生 builtin.lua 使用 ipairs 的 1-based 索引；0 是无效值。
+            local option = filterOptions[index]
             if option then category:set(option[1]); editing:set(nil); deleting:set(nil) end
         end,
     }
@@ -251,10 +260,11 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             orientation = builtin.type.Orientation.Vertical,
             children = {
                 builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
-                    builtin.Component {meta = sized(950, 34), layout = builtin.FloatingLayout {children = {
-                        builtin.FloatingLayoutChild {h = 1, v = 0.5,
-                            item = textButton(gettext("BLUEPRINT_IMPORT_TITLE"), function() openExchange("import") end)},
-                    }}},
+                    builtin.Component {meta = sized(950, 34), layout = builtin.BoxLayout {
+                        orientation = builtin.type.Orientation.Horizontal,
+                        children = {spacer(830, 34),
+                            textButton(gettext("BLUEPRINT_IMPORT_TITLE"), function() openExchange("import") end, 120)},
+                    }},
                     builtin.TextInputField {
                         meta = sized(950, 34), value = query:old(), placeholderText = gettext("BLUEPRINT_SEARCH"),
                         onTyping = function(value) query:set(value) end,
@@ -263,13 +273,11 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                     },
                     builtin.Component {
                         meta = sized(950, 36),
-                        layout = builtin.FloatingLayout {children = {
-                            builtin.FloatingLayoutChild {h = 0, v = 0.5,
-                                item = categoryFilter},
-                            builtin.FloatingLayoutChild {
-                                h = 1, v = 0.5,
-                                item = builtin.TextView {text = tr("BLUEPRINT_COUNT", {count = visibleCount})},
-                            },
+                        layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
+                            builtin.Component {meta = sized(600, 36), layout = builtin.BoxLayout {
+                                orientation = builtin.type.Orientation.Horizontal, children = {categoryFilter}}},
+                            spacer(250, 36),
+                            builtin.TextView {meta = sized(100, 36), text = tr("BLUEPRINT_COUNT", {count = visibleCount})},
                         }},
                     },
                 }},
