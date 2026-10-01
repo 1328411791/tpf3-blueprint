@@ -64,17 +64,24 @@ local function commit(candidate, selectedId, focusResName)
     refreshTarget = focusResName
 end
 
+local function nextNameNumber()
+    -- 兼容旧库：非空库延续旧名称序号；空库从 1 开始，内部 ID 不回收。
+    return state.nextNameNumber or (#state.templates == 0 and 1 or state.nextId)
+end
+
 function library.save(entity)
     library.ensureLoaded()
     assert(api.res.metaConstructionRep.find(library.carrier) >= 0,
         gettext("BLUEPRINT_RELOAD_CARRIER"))
     local shared = runtime.readState()
     assert(shared and shared.ready, gettext("BLUEPRINT_ENGINE_NOT_READY"))
+    local nameNumber = nextNameNumber()
     local snapshot = core.capture(entity, state.nextId, api.engine, api.type.ComponentType, api.res,
-        api.type.enum.TransportMode)
+        api.type.enum.TransportMode, nameNumber)
     local candidate = core.copy(state)
     candidate.templates[#candidate.templates + 1] = snapshot
     candidate.nextId = candidate.nextId + 1
+    candidate.nextNameNumber = nameNumber + 1
     commit(candidate, snapshot.id, "blueprint_demo::/blueprint/save_tool.res")
     debugPrint("[Blueprint] " .. tr("BLUEPRINT_SAVED_WAIT", {name = snapshot.name}))
     return snapshot, library.resourceName(snapshot.id)
@@ -121,6 +128,7 @@ function library.delete(id)
     local candidate = core.copy(state)
     local index = find(id, candidate)
     table.remove(candidate.templates, index)
+    if #candidate.templates == 0 then candidate.nextNameNumber = 1 end
     commit(candidate)
 end
 
@@ -129,6 +137,7 @@ function library.duplicate(id)
     local candidate = core.copy(state)
     local _, original = find(id, candidate)
     local snapshot = core.copy(original)
+    candidate.nextNameNumber = nextNameNumber()
     snapshot.id, snapshot.name = candidate.nextId, tr("BLUEPRINT_COPY_NAME", {name = original.name})
     candidate.nextId = candidate.nextId + 1
     candidate.templates[#candidate.templates + 1] = snapshot
@@ -168,6 +177,10 @@ function library.decorateDefinitions(definitions)
             definition.metadata = source.metadata
             definition.attributes = source.description and source.description.attributes or {}
             definition.cargoTypeSet = source.description and source.description.cargoTypeSet
+            -- 原生 getActionParams 将此数组传给建造器，旧模板也可继承原建筑音效。
+            local audio = source.soundConfig and source.soundConfig.builderAudioRes
+            definition.builderAudioRes = {type(audio) == "string" and audio ~= "" and audio
+                or "::/gui/construction/sound/buildoze_construction_large.builder_audio"}
             definition.params = shallow(carrier.params)
             local categories = {}
             -- 展示时重新解析分类，旧版误存为四种交通目录的模板也立即纠正。
