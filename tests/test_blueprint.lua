@@ -97,7 +97,7 @@ app = {
             error("The directory you trying to access is not available or invalid")
         end
         assert(directory == "mod_presets")
-        return disk and {"blueprint_demo_library"} or {}
+        return disk and {"blueprint_library"} or {}
     end,
     loadUserdata = function()
         local result = copy(disk)
@@ -108,7 +108,7 @@ app = {
         return result
     end,
     saveUserdata = function(directory, file, value)
-        assert(directory == "mod_presets" and file == "blueprint_demo_library")
+        assert(directory == "mod_presets" and file == "blueprint_library")
         if failWrite then error("disk failure") end
         assert(value.version == 4 and value.encoding == "base64" and type(value.data) == "table")
         -- 模拟只保留字符串键及连续数组的游戏文件输出。
@@ -1265,7 +1265,7 @@ test("engine directory whitelist allows first save, reload and unrelated preset 
         if directory ~= "mod_presets" then
             error("The directory you trying to access is not available or invalid")
         end
-        return disk and {"default.preset.lua", "blueprint_demo_library.lua"} or {"default.preset.lua"}
+        return disk and {"default.preset.lua", "blueprint_library.lua"} or {"default.preset.lua"}
     end
     modules["blueprint_demo::/blueprint/library.lua"] = nil
     local fresh = require "blueprint_demo::/blueprint/library.lua"
@@ -1293,7 +1293,7 @@ test("older engines read the legacy library and migrate only on a successful edi
             assert(file == "library")
             legacyReads = legacyReads + 1
         else
-            assert(directory == "mod_presets" and file == "blueprint_demo_library")
+            assert(directory == "mod_presets" and file == "blueprint_library")
         end
         return loadUserdata()
     end
@@ -1317,7 +1317,7 @@ test("primary directory and existing file errors never initialize an empty libra
     for _, failure in ipairs({"directory", "read", "validation"}) do
         app.getAllUserdata = function()
             if failure == "directory" then error("The directory you trying to access is not available or invalid") end
-            return {"blueprint_demo_library"}
+            return {"blueprint_library"}
         end
         app.loadUserdata = function()
             if failure == "validation" then return {version = 99} end
@@ -1332,6 +1332,38 @@ test("primary directory and existing file errors never initialize an empty libra
         app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
         assert(core.equal(reloaded.list(), library.list()))
     end
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+test("previous filename loads automatically and new filename takes precedence", function()
+    local listUserdata, loadUserdata = app.getAllUserdata, app.loadUserdata
+    local oldDisk, oldWrites = copy(disk), writes
+    local hasNew, legacyReads, newReads = false, 0, 0
+    app.getAllUserdata = function(directory)
+        assert(directory == "mod_presets")
+        return hasNew and {"blueprint_demo_library.lua", "blueprint_library.lua"}
+            or {"blueprint_demo_library.lua"}
+    end
+    app.loadUserdata = function(directory, file)
+        assert(directory == "mod_presets")
+        if file == "blueprint_demo_library" then
+            legacyReads = legacyReads + 1
+            return copy(oldDisk)
+        end
+        assert(file == "blueprint_library")
+        newReads = newReads + 1
+        return loadUserdata()
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local reloaded = require "blueprint_demo::/blueprint/library.lua"
+    assert(core.equal(reloaded.list(), library.list()) and legacyReads == 1 and writes == oldWrites)
+    reloaded.rename(disk.templates[1].id, "new filename")
+    assert(writes == oldWrites + 1 and disk.templates[1].name == "new filename" and newReads == 1)
+    hasNew = true
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local preferred = require "blueprint_demo::/blueprint/library.lua"
+    assert(preferred.list()[1].name == "new filename" and legacyReads == 1 and newReads == 2)
+    disk, writes = oldDisk, oldWrites
+    app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
     modules["blueprint_demo::/blueprint/library.lua"] = library
 end)
 print(tostring(passed) .. " Lua contract tests passed")

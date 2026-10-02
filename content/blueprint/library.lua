@@ -6,7 +6,7 @@ local persistence = require "blueprint_demo::/blueprint/persistence.lua"
 local library = {}
 -- 当前引擎对 userdata API 使用固定目录白名单。普通 .lua 文件不会成为
 -- 原生的 *.preset.lua 模组预设；使用 Mod 专属文件名避免覆盖原生文件。
-local directory, file = "mod_presets", "blueprint_demo_library"
+local directory, file = "mod_presets", "blueprint_library"
 local loaded, state, published = false, nil, nil
 local revision, retryTicks, lastSaved = 0, 0, nil
 local refreshTarget
@@ -30,6 +30,10 @@ end
 function library.ensureLoaded()
     if loaded then return end
     local value, exists = readLibrary(directory, file)
+    if not exists then
+        -- 同目录下的上一版文件名可自动读取，下一次成功编辑写入新文件名。
+        value, exists = readLibrary(directory, "blueprint_demo_library")
+    end
     if not exists then
         -- 旧游戏版本若仍允许自定义目录，则只读加载旧库，下一次编辑写入新位置。
         local ok, legacy, legacyExists = pcall(readLibrary, "blueprint_demo", "library")
