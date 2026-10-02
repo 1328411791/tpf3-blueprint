@@ -92,7 +92,13 @@ api.engine = {
 }
 local disk, writes, failWrite, corruptRead = nil, 0, false, false
 app = {
-    getAllUserdata = function() return disk and {"library"} or {} end,
+    getAllUserdata = function(directory)
+        if directory == "blueprint_demo" then
+            error("The directory you trying to access is not available or invalid")
+        end
+        assert(directory == "mod_presets")
+        return disk and {"blueprint_demo_library"} or {}
+    end,
     loadUserdata = function()
         local result = copy(disk)
         if corruptRead then result.templates[#result.templates].params.seed = 999 end
@@ -102,7 +108,7 @@ app = {
         return result
     end,
     saveUserdata = function(directory, file, value)
-        assert(directory == "blueprint_demo" and file == "library")
+        assert(directory == "mod_presets" and file == "blueprint_demo_library")
         if failWrite then error("disk failure") end
         assert(value.version == 4 and value.encoding == "base64" and type(value.data) == "table")
         -- 模拟只保留字符串键及连续数组的游戏文件输出。
@@ -1250,5 +1256,82 @@ test("sharing exports one v4 element and import assigns a fresh ID with exact co
     local _, dependencies = library.previewImport(missingText)
     assert(#dependencies > 0)
     assert(library.importTemplate(missingText).constructionFileName == missing.constructionFileName)
+end)
+test("engine directory whitelist allows first save, reload and unrelated preset files", function()
+    local oldDisk, oldWrites = disk, writes
+    local listUserdata = app.getAllUserdata
+    disk = nil
+    app.getAllUserdata = function(directory)
+        if directory ~= "mod_presets" then
+            error("The directory you trying to access is not available or invalid")
+        end
+        return disk and {"default.preset.lua", "blueprint_demo_library.lua"} or {"default.preset.lua"}
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local fresh = require "blueprint_demo::/blueprint/library.lua"
+    assert(#fresh.list() == 0 and writes == oldWrites and disk == nil)
+    local saved = fresh.save(10)
+    assert(saved.id == 1 and disk.nextId == 2 and writes == oldWrites + 1)
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local reloaded = require "blueprint_demo::/blueprint/library.lua"
+    assert(core.equal(reloaded.list(), {saved}) and writes == oldWrites + 1)
+    disk, writes, app.getAllUserdata = oldDisk, oldWrites, listUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+
+test("older engines read the legacy library and migrate only on a successful edit", function()
+    local listUserdata, loadUserdata = app.getAllUserdata, app.loadUserdata
+    local oldDisk, oldWrites = copy(disk), writes
+    local legacyReads = 0
+    app.getAllUserdata = function(directory)
+        if directory == "mod_presets" then return {} end
+        assert(directory == "blueprint_demo")
+        return {"library.lua"}
+    end
+    app.loadUserdata = function(directory, file)
+        if directory == "blueprint_demo" then
+            assert(file == "library")
+            legacyReads = legacyReads + 1
+        else
+            assert(directory == "mod_presets" and file == "blueprint_demo_library")
+        end
+        return loadUserdata()
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local reloaded = require "blueprint_demo::/blueprint/library.lua"
+    assert(core.equal(reloaded.list(), library.list()) and writes == oldWrites and legacyReads == 1)
+    failWrite = true
+    rejects(function() reloaded.rename(disk.templates[1].id, "migrated") end, "disk failure")
+    failWrite = false
+    assert(writes == oldWrites and core.equal(disk, oldDisk))
+    reloaded.rename(disk.templates[1].id, "migrated")
+    assert(writes == oldWrites + 1 and disk.templates[1].name == "migrated")
+    disk, writes = oldDisk, oldWrites
+    app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+
+test("primary directory and existing file errors never initialize an empty library", function()
+    local listUserdata, loadUserdata = app.getAllUserdata, app.loadUserdata
+    local oldWrites, oldDisk = writes, copy(disk)
+    for _, failure in ipairs({"directory", "read", "validation"}) do
+        app.getAllUserdata = function()
+            if failure == "directory" then error("The directory you trying to access is not available or invalid") end
+            return {"blueprint_demo_library"}
+        end
+        app.loadUserdata = function()
+            if failure == "validation" then return {version = 99} end
+            error("read failure")
+        end
+        modules["blueprint_demo::/blueprint/library.lua"] = nil
+        local reloaded = require "blueprint_demo::/blueprint/library.lua"
+        local message = failure == "directory" and "The directory you trying"
+            or failure == "read" and "read failure" or "不受支持"
+        rejects(function() reloaded.save(10) end, message)
+        assert(writes == oldWrites and core.equal(disk, oldDisk))
+        app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
+        assert(core.equal(reloaded.list(), library.list()))
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = library
 end)
 print(tostring(passed) .. " Lua contract tests passed")
