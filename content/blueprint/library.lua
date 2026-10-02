@@ -4,7 +4,9 @@ local core = require "blueprint_demo::/blueprint/core.lua"
 local runtime = require "blueprint_demo::/blueprint/runtime.lua"
 local persistence = require "blueprint_demo::/blueprint/persistence.lua"
 local library = {}
-local directory, file = "blueprint_demo", "library"
+-- 当前引擎对 userdata API 使用固定目录白名单。普通 .lua 文件不会成为
+-- 原生的 *.preset.lua 模组预设；使用 Mod 专属文件名避免覆盖原生文件。
+local directory, file = "mod_presets", "blueprint_library"
 local loaded, state, published = false, nil, nil
 local revision, retryTicks, lastSaved = 0, 0, nil
 local refreshTarget
@@ -15,14 +17,37 @@ function library.resourceName(id)
     return "blueprint_demo::/blueprint/saved_" .. tostring(id) .. ".metacon"
 end
 
+local function readLibrary(folder, filename)
+    for _, name in ipairs(app.getAllUserdata(folder)) do
+        if name == filename or name == filename .. ".lua" then
+            -- 文件存在时，读取或校验失败必须向上传递，不能初始化空库。
+            return app.loadUserdata(folder, filename), true
+        end
+    end
+    return nil, false
+end
+
 function library.ensureLoaded()
     if loaded then return end
-    local exists = false
-    for _, name in ipairs(app.getAllUserdata(directory)) do
-        if name == file or name == file .. ".lua" then exists = true end
+    local value, exists = readLibrary(directory, file)
+    if not exists then
+        -- 同目录下的上一版文件名可自动读取，下一次成功编辑写入新文件名。
+        value, exists = readLibrary(directory, "blueprint_demo_library")
     end
-    state = persistence.decode(exists and app.loadUserdata(directory, file)
-        or {version = 1, nextId = 1, templates = {}})
+    if not exists then
+        -- 旧游戏版本若仍允许自定义目录，则只读加载旧库，下一次编辑写入新位置。
+        local ok, legacy, legacyExists = pcall(readLibrary, "blueprint_demo", "library")
+        if ok then
+            if legacyExists then value, exists = legacy, true end
+        else
+            local message = tostring(legacy)
+            local denied = message:find("The directory you trying to access is not available or invalid", 1, true)
+                or message:find("The directory you're trying to access is not available or invalid", 1, true)
+            if not denied then error(legacy, 0) end
+        end
+    end
+    if not exists then value = {version = 1, nextId = 1, templates = {}} end
+    state = persistence.decode(value)
     loaded = true
     debugPrint("[Blueprint] " .. tr("BLUEPRINT_LIBRARY_LOADED", {count = #state.templates}))
 end

@@ -92,7 +92,13 @@ api.engine = {
 }
 local disk, writes, failWrite, corruptRead = nil, 0, false, false
 app = {
-    getAllUserdata = function() return disk and {"library"} or {} end,
+    getAllUserdata = function(directory)
+        if directory == "blueprint_demo" then
+            error("The directory you trying to access is not available or invalid")
+        end
+        assert(directory == "mod_presets")
+        return disk and {"blueprint_library"} or {}
+    end,
     loadUserdata = function()
         local result = copy(disk)
         if corruptRead then result.templates[#result.templates].params.seed = 999 end
@@ -102,7 +108,7 @@ app = {
         return result
     end,
     saveUserdata = function(directory, file, value)
-        assert(directory == "blueprint_demo" and file == "library")
+        assert(directory == "mod_presets" and file == "blueprint_library")
         if failWrite then error("disk failure") end
         assert(value.version == 4 and value.encoding == "base64" and type(value.data) == "table")
         -- 模拟只保留字符串键及连续数组的游戏文件输出。
@@ -678,7 +684,68 @@ test("management rejects invalid targets and retains state when persistence fail
     failWrite = false
     assert(core.equal(library.list(), previous))
 end)
-test("manager opens independently without replacing native UI and renders searchable preview rows", function()
+test("UI helpers preserve caller styles, plain text and native layout boundaries", function()
+    local builtin = {type = {Orientation = {Horizontal = "horizontal", Vertical = "vertical"}}}
+    for _, kind in ipairs({"TextView", "RichTextView", "Button", "BoxLayout"}) do
+        builtin[kind] = function(params) return {kind = kind, params = params} end
+    end
+    builtin.Component = function(params)
+        assert(params.layout.kind == "BoxLayout", "Component needs a layout")
+        return {kind = "Component", params = params}
+    end
+    function ug_require(name)
+        if name:find("builtin.lua", 1, true) then return builtin end
+        return {makeStyle = function(value) return value end}
+    end
+    api.type.Vec4f = {new = function(a, b, c, d) return {a, b, c, d} end}
+    modules["blueprint_demo::/blueprint/ui.lua"] = nil
+    local ui = require "blueprint_demo::/blueprint/ui.lua"
+    local properties = {size = {9, 10}, color = {1, 0.5, 0.2, 1}}
+    local original = copy(properties)
+    local meta = ui.layoutMeta(80, 20, "helper", properties, {1, 2, 3, 4}, "test-class")
+    assert(core.equal(properties, original) and meta.styleSheet.size[1] == 80)
+    assert(meta.styleSheet.padding[2] == 2 and meta.class == "test-class" and meta.localKey == "helper")
+    local value = "<站> &amp;\n第二行"
+    assert(ui.text(value, meta, value).params.text == value)
+    local rich = ui.richText(value, meta)
+    assert(rich.params.isHtml and rich.params.text == "&lt;站&gt; &amp;amp;<br>第二行")
+    local children = {ui.text("first"), ui.text("second")}
+    local row = ui.row(children, 8)
+    assert(#children == 2 and #row.params.children == 3 and row.params.orientation == "horizontal")
+    local gap = row.params.children[2]
+    assert(gap.kind == "Component" and gap.params.meta.mouseTransparent)
+    assert(gap.params.meta.styleSheet.size[1] == 8 and gap.params.meta.styleSheet.size[2] == 0)
+    assert(gap.params.layout.kind == "BoxLayout" and #gap.params.layout.params.children == 0)
+    local column = ui.column(children, 12)
+    assert(column.params.orientation == "vertical" and column.params.children[2].params.meta.styleSheet.size[2] == 12)
+    assert(ui.row(children).params.children == children)
+    local component = ui.component(column, meta)
+    assert(component.kind == "Component" and component.params.layout == column and component.params.meta == meta)
+    rejects(function() ui.component(ui.text("invalid")) end, "Component needs a layout")
+    local card = ui.card(row, 910, -1, "card")
+    assert(card.params.layout == row and card.params.meta.class == "blueprint-manager-card")
+    assert(card.params.meta.styleSheet.padding[1] == 12 and card.params.meta.styleSheet.size[1] == 910)
+    local clicks = 0
+    local callback = function() clicks = clicks + 1 end
+    local button = ui.managerButton("save", callback, "save-key", 112, true)
+    assert(button.params.onClick == callback and button.params.meta.class == "primary")
+    button.params.onClick()
+    assert(clicks == 1 and ui.textButton("label", callback).params.meta == nil)
+    modules["blueprint_demo::/blueprint/ui.lua"] = nil
+end)
+test("manager stylesheet uses only blueprint classes", function()
+    local rules = {}
+    modules["::/gui/main/stylesheetutil.lua"] = {makeAdder = function(target)
+        return function(selector, properties)
+            assert(selector:find("!blueprint-manager-", 1, true), "unscoped manager stylesheet")
+            target[#target + 1] = {selector = selector, properties = properties}
+        end
+    end}
+    rules = script("blueprint/manager.css.lua")
+    assert(#rules > 0 and rules[1].properties.textAlignment[1] == 1)
+    modules["::/gui/main/stylesheetutil.lua"] = nil
+end)
+test("manager preserves native UI and all operations with aligned preview rows", function()
     local recipes, states, cursor = {}, {}, 0
     local handlers = {}
     local function node(kind)
@@ -686,7 +753,8 @@ test("manager opens independently without replacing native UI and renders search
     end
     local builtin = {type = {
         Orientation = {Vertical = "vertical", Horizontal = "horizontal"},
-        ImageViewScaling = {AutoFit = "fit"}, ScrollBarPolicy = {AlwaysOff = "off", AsNeeded = "auto"},
+        ImageViewScaling = {AutoFit = "fit"},
+        ScrollBarPolicy = {AlwaysOff = "off", AsNeeded = "auto", AsNeededButAlwaysReserveSpace = "reserve"},
     }}
     for _, name in ipairs({"Window", "Component", "Button", "ToggleButtonGroup", "TextView", "RichTextView", "ImageView", "TextInputField", "BoxLayout", "ScrollArea", "FloatingLayout", "FloatingLayoutChild"}) do
         builtin[name] = node(name)
@@ -702,13 +770,13 @@ test("manager opens independently without replacing native UI and renders search
         assert(params.content.kind == "Component", "ScrollArea does not accept a Layout as content")
         return {kind = "ScrollArea", params = params}
     end
+    api.type.Vec4f = {new = function(a, b, c, d) return {a, b, c, d} end}
     local react = {
         RegisterWrapperRecipe = function(name, _, fn) recipes[name] = fn; return fn end,
         useState = function(initial)
             cursor = cursor + 1
-            local index = cursor
-            if states[index] == nil then states[index] = {value = initial} end
-            local state = states[index]
+            if states[cursor] == nil then states[cursor] = {value = initial} end
+            local state = states[cursor]
             return {old = function() return state.value end, set = function(_, value) state.value = value end}
         end,
         onEvent = function(name, fn) handlers[name] = fn end, onStep = function() end,
@@ -719,9 +787,24 @@ test("manager opens independently without replacing native UI and renders search
         if name:find("builtin.lua", 1, true) then return builtin end
         return {makeStyle = function(value) return value end}
     end
+    local function keyed(tree, key)
+        if type(tree) ~= "table" then return end
+        if tree.params and tree.params.meta and tree.params.meta.localKey == key then return tree end
+        for _, child in pairs(tree) do
+            local found = keyed(child, key)
+            if found then return found end
+        end
+    end
+    local function outerWidth(item)
+        local style = item.params.meta.styleSheet
+        local pad = style.padding or {0, 0, 0, 0}
+        return style.size[1] + pad[2] + pad[4]
+    end
+    modules["blueprint_demo::/blueprint/ui.lua"] = nil
     modules["blueprint_demo::/blueprint/manager.lua"] = nil
     local manager = require "blueprint_demo::/blueprint/manager.lua"
     local shown, windowRecipe = {}, nil
+    local function render(recipe) cursor = 0; return (recipe or windowRecipe)({}) end
     local windowApi = {
         addSingletonWindow = function(recipe) windowRecipe = recipe end,
         moveSingletonWindowToFront = function(recipe) assert(recipe == windowRecipe) end,
@@ -748,78 +831,76 @@ test("manager opens independently without replacing native UI and renders search
     entry.children[1].params.onClick()
     panel.children[3].params.item.params.onClick()
     assert(closeClicks == 1)
-    cursor = 0
-    local window = windowRecipe({})
-    assert(window.kind == "Window" and window.params.id == "blueprint.template.manager")
-    local children = window.params.content.params.children
-    assert(children[2].kind == "ScrollArea")
-    assert(children[2].params.content.kind == "Component")
-    local rows = children[2].params.content.params.layout.params.children
-    local function rowColumns(row)
-        return row.params.children
-    end
-    assert(#rows == #library.list() and rowColumns(rows[1])[1].kind == "ImageView")
-    assert(rowColumns(rows[1])[2].params.layout.params.children[1].kind == "TextView")
-    local filterRow = children[1].params.children[3].params.layout.params.children
-    assert(filterRow[1].params.meta.styleSheet.size[1] == 600)
-    assert(filterRow[2].params.meta.styleSheet.size[1] == 250 and filterRow[2].params.meta.mouseTransparent)
-    assert(filterRow[3].kind == "TextView" and filterRow[3].params.meta.styleSheet.size[1] == 100)
-    assert(rows[1].params.children[3].params.layout.params.children[1].params.meta.mouseTransparent)
-    children[1].params.children[2].params.onTyping("没有这个模板")
-    cursor = 0
-    local empty = windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
-    assert(#empty == 1 and empty[1].params.text == "没有匹配的模板")
-    children[1].params.children[2].params.onCancel()
     local function renderRows()
-        cursor = 0
-        return windowRecipe({}).params.content.params.children[2].params.content.params.layout.params.children
+        local result = {}
+        local children = keyed(render(), "manager-list").params.content.params.layout.params.children
+        for _, child in ipairs(children) do
+            if child.params.meta and child.params.meta.localKey and child.params.meta.localKey:find("template-row-", 1, true) then
+                result[#result + 1] = child
+            end
+        end
+        return result
     end
-    local function rowControls(row)
-        return row.params.children[3].params.layout.params.children[2].params.layout.params.children
+    local window = render()
+    assert(window.kind == "Window" and window.params.id == "blueprint.template.manager" and window.params.movable)
+    local list = keyed(window, "manager-list")
+    assert(list.params.verticalPolicy == "reserve" and list.params.content.kind == "Component")
+    local rows = renderRows()
+    assert(#rows == #library.list() and rows[1].params.layout.params.children[1].kind == "ImageView")
+    local columns = rows[1].params.layout.params.children
+    local sum = 0
+    for _, col in ipairs(columns) do sum = sum + outerWidth(col) end
+    assert(sum == rows[1].params.meta.styleSheet.size[1] and outerWidth(rows[1]) <= outerWidth(list) - 16)
+    local actions = keyed(rows[1], "template-actions")
+    local buttonsWidth = 3 * 8
+    for _, key in ipairs({"template-edit", "template-copy", "template-delete", "template-share"}) do
+        buttonsWidth = buttonsWidth + outerWidth(keyed(rows[1], key))
     end
+    assert(buttonsWidth <= outerWidth(actions))
+    local toolbar = keyed(window, "manager-toolbar").params.layout.params.children
+    local filterRow = keyed(window, "manager-filter-row").params.layout.params.children
+    assert(outerWidth(toolbar[1]) + outerWidth(toolbar[2]) == outerWidth(list) - 28)
+    assert(outerWidth(filterRow[1]) + outerWidth(filterRow[2]) + outerWidth(filterRow[3]) == outerWidth(list) - 28)
+    keyed(window, "manager-search").params.onTyping("没有这个模板")
+    assert(keyed(render(), "template-empty").params.text == "没有匹配的模板")
+    keyed(render(), "manager-search").params.onCancel()
     local firstId = library.list()[1].id
-    assert(#rowControls(renderRows()[1]) == 4)
-    assert(rowColumns(renderRows()[1])[2].params.layout.params.children[2].kind == "RichTextView")
-    rowControls(renderRows()[1])[1].params.onClick()
-    local editControls = rowControls(renderRows()[1])
-    rowColumns(renderRows()[1])[2].params.layout.params.children[1].params.onTyping("管理窗口修改")
-    rowColumns(renderRows()[1])[2].params.layout.params.children[2].params.onTyping("货运 <站> & 换行\n描述")
-    editControls[1].params.onClick()
+    keyed(renderRows()[1], "template-edit").params.onClick()
+    local edited = renderRows()[1]
+    keyed(edited, "template-name").params.onTyping("管理窗口修改")
+    keyed(edited, "template-description").params.onTyping("货运 <站> & 换行\n描述")
+    assert(outerWidth(keyed(edited, "template-save")) + 8 + outerWidth(keyed(edited, "template-cancel")) <= outerWidth(actions))
+    keyed(edited, "template-save").params.onClick()
     assert(library.list("管理窗口修改")[1].id == firstId)
     assert(library.list("管理窗口修改")[1].description == "货运 <站> & 换行\n描述")
-    assert(rowColumns(renderRows()[1])[2].params.layout.params.children[2].params.text == "货运 &lt;站&gt; &amp; 换行<br>描述")
+    assert(keyed(renderRows()[1], "template-description").params.text == "货运 &lt;站&gt; &amp; 换行<br>描述")
+    -- Canceling edits preserves both fields.
+    keyed(renderRows()[1], "template-edit").params.onClick()
+    edited = renderRows()[1]
+    keyed(edited, "template-name").params.onTyping("取消的名称")
+    keyed(edited, "template-cancel").params.onClick()
+    assert(library.list("管理窗口修改")[1].id == firstId)
     local countBefore = #library.list()
-    rowControls(renderRows()[1])[2].params.onClick()
+    keyed(renderRows()[1], "template-copy").params.onClick()
     assert(#library.list() == countBefore + 1)
     local copiedId = library.list()[countBefore + 1].id
-    rowControls(renderRows()[countBefore + 1])[3].params.onClick()
+    keyed(renderRows()[countBefore + 1], "template-delete").params.onClick()
     assert(#library.list() == countBefore + 1)
-    local confirmation = rowControls(renderRows()[countBefore + 1])
-    assert(confirmation[1].params.text == "删除此模板？")
-    confirmation[3].params.onClick()
+    local confirmation = renderRows()[countBefore + 1]
+    assert(keyed(confirmation, "template-delete-question").params.text == "删除此模板？")
+    keyed(confirmation, "template-cancel").params.onClick()
     assert(#library.list() == countBefore + 1)
-    rowControls(renderRows()[countBefore + 1])[3].params.onClick()
-    rowControls(renderRows()[countBefore + 1])[2].params.onClick()
+    keyed(renderRows()[countBefore + 1], "template-delete").params.onClick()
+    keyed(renderRows()[countBefore + 1], "template-confirm-delete").params.onClick()
     assert(#library.list() == countBefore)
     for _, saved in ipairs(library.list()) do assert(saved.id ~= copiedId) end
-    -- 分类筛选与文本搜索组合；使用原生 ToggleButtonGroup 显示选中状态。
-    cursor = 0
-    local filter = windowRecipe({}).params.content.params.children[1].params.children[3].params.layout.params.children[1].params.layout.params.children[1]
-    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 6 and filter.params.selected == 1)
-    filter.params.onValueChange(4)
-    local noWater = renderRows()
-    assert(#noWater == 1 and noWater[1].params.text == "没有匹配的模板")
-    filter.params.onValueChange(1)
-    assert(#renderRows() == #library.list())
-    -- 六个原生按钮的索引分别是 1..6，尤其检查最后的仓库按钮。
+    local filter = keyed(render(), "template-filters")
+    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 6 and filter.params.selected == 1 and filter.params.layout == "Horizontal")
     local categoryKeys = {"", "rail_buildings", "road_buildings", "water_buildings", "air_buildings", "warehouses"}
     for index, key in ipairs(categoryKeys) do
         filter.params.onValueChange(index)
-        cursor = 0
-        local filteredWindow = windowRecipe({})
-        local filterLine = filteredWindow.params.content.params.children[1].params.children[3].params.layout.params.children
-        assert(filterLine[1].params.layout.kind == "BoxLayout")
-        assert(filterLine[1].params.layout.params.children[1].params.selected == index)
+        local filteredWindow = render()
+        assert(keyed(filteredWindow, "template-filters").params.selected == index)
         local expected = 0
         for _, saved in ipairs(library.list()) do
             local sourceId = api.res.constructionRep.find(saved.constructionFileName)
@@ -829,53 +910,55 @@ test("manager opens independently without replacing native UI and renders search
             for _, value in ipairs(categories) do if value == key then matches = true end end
             if matches then expected = expected + 1 end
         end
-        assert(filterLine[3].params.text == tostring(expected) .. " 个模板")
-        local actualRows = filteredWindow.params.content.params.children[2].params.content.params.layout.params.children
-        assert(expected == 0 and actualRows[1].kind == "TextView" or #actualRows == expected)
+        assert(keyed(filteredWindow, "manager-count").params.text == tostring(expected) .. " 个模板")
+        assert(#renderRows() == expected)
+        if expected == 0 then assert(keyed(filteredWindow, "template-empty")) end
     end
+    -- Search and category selection combine, including invalid zero index.
+    filter.params.onValueChange(0)
+    assert(keyed(render(), "template-filters").params.selected == 6)
+    keyed(render(), "manager-search").params.onTyping("没有这个模板")
+    assert(#renderRows() == 0)
+    keyed(render(), "manager-search").params.onCancel()
     filter.params.onValueChange(1)
-    -- 分享弹窗不修改模板库；导入弹窗读取分享文本并新增一个独立 ID。
     local managerRecipe, managerStates = windowRecipe, states
     local shareText = library.exportTemplate(firstId)
-    rowControls(renderRows()[1])[4].params.onClick()
-    assert(shown["blueprint.template.exchange"])
+    keyed(renderRows()[1], "template-share").params.onClick()
+    assert(shown["blueprint.template.exchange"] and #library.list() == countBefore)
     states, cursor = {}, 0
-    local shareWindow = windowRecipe({})
+    local shareWindow = render()
     local exchangeStates = states
     assert(shareWindow.params.title == "分享蓝图")
     assert(shareWindow.params.content.params.children[2].params.value == shareText)
     shareWindow.params.onClose()
     assert(not shown["blueprint.template.exchange"])
     states, cursor, windowRecipe = managerStates, 0, managerRecipe
-    local header = windowRecipe({}).params.content.params.children[1].params.children
-    assert(header[1].params.layout.params.children[1].params.meta.styleSheet.size[1] == 830)
-    header[1].params.layout.params.children[2].params.onClick()
+    keyed(render(), "manager-import").params.onClick()
     states, cursor = exchangeStates, 0
     local importRecipe = windowRecipe
-    local importWindow = importRecipe({})
+    local importWindow = render(importRecipe)
     assert(importWindow.params.title == "导入蓝图")
     importWindow.params.content.params.children[2].params.onTyping(shareText)
-    cursor = 0
-    importWindow = importRecipe({})
+    importWindow = render(importRecipe)
     assert(importWindow.params.content.params.children[3].params.text:find("管理窗口修改", 1, true))
     local beforeImport = #library.list()
     importWindow.params.content.params.children[5].params.layout.params.children[2].params.layout.params.children[2].params.onClick()
     assert(#library.list() == beforeImport + 1 and not shown["blueprint.template.exchange"])
     states, cursor, windowRecipe = managerStates, 0, managerRecipe
-    -- 切换语言并重新加载管理器，验证真实界面调用点和已保存名称。
     testLanguage = "en"
     modules["blueprint_demo::/blueprint/manager.lua"] = nil
     states, cursor = {}, 0
     local englishManager = require "blueprint_demo::/blueprint/manager.lua"
     englishManager.open(context)
-    local englishWindow = windowRecipe({})
+    local englishWindow = render()
     assert(englishWindow.params.title == "Template Manager · Blueprint")
-    local englishChildren = englishWindow.params.content.params.children
-    assert(englishChildren[1].params.children[2].params.placeholderText == "Search template names…")
-    local englishRows = englishChildren[2].params.content.params.layout.params.children
-    assert(rowColumns(englishRows[1])[2].params.layout.params.children[1].params.text == library.list()[1].name)
-    assert(rowControls(englishRows[1])[1].params.content.params.text == "Edit")
-    assert(rowColumns(englishRows[1])[2].params.layout.params.children[3].params.text:find("modules", 1, true))
+    assert(keyed(englishWindow, "manager-search").params.placeholderText == "Search template names…")
+    local englishRows = renderRows()
+    assert(keyed(englishRows[1], "template-name").params.text == library.list()[1].name)
+    assert(keyed(englishRows[1], "template-edit").params.content.params.text == "Edit")
+    assert(keyed(englishRows[1], "template-details").params.text:find("modules", 1, true))
+    englishWindow.params.onClose()
+    assert(not shown["blueprint.template.manager"])
     testLanguage = "zh_CN"
 end)
 test("legacy street station images are repaired without changing saved data or other mods", function()
@@ -1207,5 +1290,114 @@ test("sharing exports one v4 element and import assigns a fresh ID with exact co
     local _, dependencies = library.previewImport(missingText)
     assert(#dependencies > 0)
     assert(library.importTemplate(missingText).constructionFileName == missing.constructionFileName)
+end)
+test("engine directory whitelist allows first save, reload and unrelated preset files", function()
+    local oldDisk, oldWrites = disk, writes
+    local listUserdata = app.getAllUserdata
+    disk = nil
+    app.getAllUserdata = function(directory)
+        if directory ~= "mod_presets" then
+            error("The directory you trying to access is not available or invalid")
+        end
+        return disk and {"default.preset.lua", "blueprint_library.lua"} or {"default.preset.lua"}
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local fresh = require "blueprint_demo::/blueprint/library.lua"
+    assert(#fresh.list() == 0 and writes == oldWrites and disk == nil)
+    local saved = fresh.save(10)
+    assert(saved.id == 1 and disk.nextId == 2 and writes == oldWrites + 1)
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local reloaded = require "blueprint_demo::/blueprint/library.lua"
+    assert(core.equal(reloaded.list(), {saved}) and writes == oldWrites + 1)
+    disk, writes, app.getAllUserdata = oldDisk, oldWrites, listUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+
+test("older engines read the legacy library and migrate only on a successful edit", function()
+    local listUserdata, loadUserdata = app.getAllUserdata, app.loadUserdata
+    local oldDisk, oldWrites = copy(disk), writes
+    local legacyReads = 0
+    app.getAllUserdata = function(directory)
+        if directory == "mod_presets" then return {} end
+        assert(directory == "blueprint_demo")
+        return {"library.lua"}
+    end
+    app.loadUserdata = function(directory, file)
+        if directory == "blueprint_demo" then
+            assert(file == "library")
+            legacyReads = legacyReads + 1
+        else
+            assert(directory == "mod_presets" and file == "blueprint_library")
+        end
+        return loadUserdata()
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local reloaded = require "blueprint_demo::/blueprint/library.lua"
+    assert(core.equal(reloaded.list(), library.list()) and writes == oldWrites and legacyReads == 1)
+    failWrite = true
+    rejects(function() reloaded.rename(disk.templates[1].id, "migrated") end, "disk failure")
+    failWrite = false
+    assert(writes == oldWrites and core.equal(disk, oldDisk))
+    reloaded.rename(disk.templates[1].id, "migrated")
+    assert(writes == oldWrites + 1 and disk.templates[1].name == "migrated")
+    disk, writes = oldDisk, oldWrites
+    app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+
+test("primary directory and existing file errors never initialize an empty library", function()
+    local listUserdata, loadUserdata = app.getAllUserdata, app.loadUserdata
+    local oldWrites, oldDisk = writes, copy(disk)
+    for _, failure in ipairs({"directory", "read", "validation"}) do
+        app.getAllUserdata = function()
+            if failure == "directory" then error("The directory you trying to access is not available or invalid") end
+            return {"blueprint_library"}
+        end
+        app.loadUserdata = function()
+            if failure == "validation" then return {version = 99} end
+            error("read failure")
+        end
+        modules["blueprint_demo::/blueprint/library.lua"] = nil
+        local reloaded = require "blueprint_demo::/blueprint/library.lua"
+        local message = failure == "directory" and "The directory you trying"
+            or failure == "read" and "read failure" or "不受支持"
+        rejects(function() reloaded.save(10) end, message)
+        assert(writes == oldWrites and core.equal(disk, oldDisk))
+        app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
+        assert(core.equal(reloaded.list(), library.list()))
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+test("previous filename loads automatically and new filename takes precedence", function()
+    local listUserdata, loadUserdata = app.getAllUserdata, app.loadUserdata
+    local oldDisk, oldWrites = copy(disk), writes
+    local hasNew, legacyReads, newReads = false, 0, 0
+    app.getAllUserdata = function(directory)
+        assert(directory == "mod_presets")
+        return hasNew and {"blueprint_demo_library.lua", "blueprint_library.lua"}
+            or {"blueprint_demo_library.lua"}
+    end
+    app.loadUserdata = function(directory, file)
+        assert(directory == "mod_presets")
+        if file == "blueprint_demo_library" then
+            legacyReads = legacyReads + 1
+            return copy(oldDisk)
+        end
+        assert(file == "blueprint_library")
+        newReads = newReads + 1
+        return loadUserdata()
+    end
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local reloaded = require "blueprint_demo::/blueprint/library.lua"
+    assert(core.equal(reloaded.list(), library.list()) and legacyReads == 1 and writes == oldWrites)
+    reloaded.rename(disk.templates[1].id, "new filename")
+    assert(writes == oldWrites + 1 and disk.templates[1].name == "new filename" and newReads == 1)
+    hasNew = true
+    modules["blueprint_demo::/blueprint/library.lua"] = nil
+    local preferred = require "blueprint_demo::/blueprint/library.lua"
+    assert(preferred.list()[1].name == "new filename" and legacyReads == 1 and newReads == 2)
+    disk, writes = oldDisk, oldWrites
+    app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
 end)
 print(tostring(passed) .. " Lua contract tests passed")

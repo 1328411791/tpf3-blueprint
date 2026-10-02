@@ -2,29 +2,13 @@ local gettext = _
 local tr = require "blueprint_demo::/blueprint/i18n.lua"
 local react = ug_require "::/gui/main/react.lua"
 local builtin = ug_require "::/gui/main/builtin.lua"
-local styleutil = ug_require "::/gui/main/styleutil.tl"
+local ui = require "blueprint_demo::/blueprint/ui.lua"
 local library = require "blueprint_demo::/blueprint/library.lua"
 local core = require "blueprint_demo::/blueprint/core.lua"
 local gameCtx
 local windowId = "blueprint.template.manager"
-local function sized(width, height)
-    return {styleSheet = styleutil.makeStyle {size = {width, height}}}
-end
-local function textButton(label, onClick, width)
-    return builtin.Button {meta = width and sized(width, 32) or nil,
-        content = builtin.TextView {text = label}, onClick = onClick}
-end
-local function spacer(width, height)
-    local meta = sized(width, height)
-    meta.mouseTransparent = true
-    return builtin.Component {meta = meta, layout = builtin.BoxLayout {children = {}}}
-end
 local function close()
     api.gui.byId.setVisible(windowId, false)
-end
-local function descriptionText(text)
-    -- 转义用户文字，防止富文本把描述中的尖括号等内容当成标记。
-    return (text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub("\n", "<br>"))
 end
 local categoryLabels = {
     rail_buildings = gettext("BLUEPRINT_RAIL_BUILDINGS"), road_buildings = gettext("BLUEPRINT_ROAD_BUILDINGS"),
@@ -57,9 +41,9 @@ local ExchangeWindow = react.RegisterWrapperRecipe("BlueprintTemplateExchange", 
                 .. (#missing > 0 and gettext("BLUEPRINT_IMPORT_MISSING") or ""))
         else feedback:set(gettext("BLUEPRINT_IMPORT_INVALID")) end
     end
-    local controls = {textButton(gettext(sharing and "BLUEPRINT_CLOSE" or "BLUEPRINT_CANCEL"), dismiss)}
+    local controls = {ui.textButton(gettext(sharing and "BLUEPRINT_CLOSE" or "BLUEPRINT_CANCEL"), dismiss)}
     if not sharing then
-        controls[#controls + 1] = textButton(gettext("BLUEPRINT_IMPORT"), function()
+        controls[#controls + 1] = ui.textButton(gettext("BLUEPRINT_IMPORT"), function()
             local ok, result = pcall(library.importTemplate, input:old())
             if not ok then feedback:set(tr("BLUEPRINT_OP_FAILED", {error = result})); return end
             react.fireEvent(nil, "blueprintLibraryChanged", {message = gettext("BLUEPRINT_IMPORTED"), resetFilter = true})
@@ -69,26 +53,23 @@ local ExchangeWindow = react.RegisterWrapperRecipe("BlueprintTemplateExchange", 
     return builtin.Window {
         id = exchangeId, title = gettext(sharing and "BLUEPRINT_SHARE_TITLE" or "BLUEPRINT_IMPORT_TITLE"),
         initialVisible = true, closable = true, movable = true, onClose = dismiss,
-        content = builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
-            builtin.TextView {meta = sized(560, 30), text = sharing and request:old().name or gettext("BLUEPRINT_IMPORT_HINT")},
+        content = ui.column({
+            ui.text(sharing and request:old().name or gettext("BLUEPRINT_IMPORT_HINT"), ui.sized(560, 30)),
             builtin.TextInputField {
-                meta = sized(560, 110), maxLength = 2 * 1024 * 1024,
+                meta = ui.sized(560, 110), maxLength = 2 * 1024 * 1024,
                 value = sharing and request:old().text or input:old(),
                 placeholderText = gettext("BLUEPRINT_IMPORT_PLACEHOLDER"),
                 focusOnStartEditing = true, deselectOnFocusLost = false,
                 onTyping = sharing and function() end or inspect,
                 onValueChange = sharing and function() end or inspect,
             },
-            builtin.TextView {meta = sized(560, -1), text = sharing and gettext("BLUEPRINT_SHARE_COPY_HINT") or feedback:old()},
-            builtin.TextView {meta = sized(560, -1), text = sharing and gettext("BLUEPRINT_SHARE_DEPS") or ""},
-            builtin.Component {meta = sized(560, 36), layout = builtin.BoxLayout {
-                orientation = builtin.type.Orientation.Horizontal, children = {
-                    spacer(360, 36),
-                    builtin.Component {meta = sized(200, 36), layout = builtin.BoxLayout {
-                        orientation = builtin.type.Orientation.Horizontal, children = controls}},
-                },
-            }},
-        }},
+            ui.text(sharing and gettext("BLUEPRINT_SHARE_COPY_HINT") or feedback:old(), ui.sized(560, -1)),
+            ui.text(sharing and gettext("BLUEPRINT_SHARE_DEPS") or "", ui.sized(560, -1)),
+            ui.component(ui.row({
+                    ui.spacer(360, 36),
+                    ui.component(ui.row(controls), ui.sized(200, 36)),
+                }), ui.sized(560, 36)),
+        }),
     }
 end)
 
@@ -155,81 +136,73 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         local _, preview = core.templateImages(snapshot)
         if #missing > 0 then details = details .. gettext("BLUEPRINT_MISSING_DEPS") end
         local controls
-        local nameContent = builtin.TextView {meta = sized(400, 28), text = snapshot.name, tooltipWhenClipped = snapshot.name}
-        local descriptionContent = builtin.RichTextView {
-            meta = sized(400, -1), isHtml = true,
-            text = descriptionText(snapshot.description and snapshot.description ~= "" and snapshot.description or gettext("BLUEPRINT_NO_DESCRIPTION")),
-        }
+        local nameContent = ui.text(snapshot.name, ui.layoutMeta(468, 28, "template-name", nil, nil, "font-scale-body"), snapshot.name)
+        local descriptionContent = ui.richText(snapshot.description and snapshot.description ~= "" and snapshot.description or gettext("BLUEPRINT_NO_DESCRIPTION"),
+            ui.layoutMeta(468, -1, "template-description", nil, nil, "blueprint-manager-description"))
         if editing:old() == id then
             nameContent = builtin.TextInputField {
-                    meta = sized(400, 32), value = draft:old(), maxLength = 128,
+                    meta = ui.layoutMeta(452, 24, "template-name", nil, {4, 8, 4, 8}), value = draft:old(), maxLength = 128,
                     onTyping = function(value) draft:set(value) end,
                     onValueChange = function(value) draft:set(value) end,
             }
             descriptionContent = builtin.TextInputField {
-                meta = sized(400, 32), value = descriptionDraft:old(), maxLength = 1024,
+                meta = ui.layoutMeta(452, 24, "template-description", nil, {4, 8, 4, 8}), value = descriptionDraft:old(), maxLength = 1024,
                 placeholderText = gettext("BLUEPRINT_DESCRIPTION_PLACEHOLDER"),
                 onTyping = function(value) descriptionDraft:set(value) end,
                 onValueChange = function(value) descriptionDraft:set(value) end,
             }
             controls = {
-                textButton(gettext("BLUEPRINT_SAVE_METADATA"), function() run(function() library.updateMetadata(id, draft:old(), descriptionDraft:old()) end, gettext("BLUEPRINT_METADATA_SAVED")) end),
-                textButton(gettext("BLUEPRINT_CANCEL"), function() editing:set(nil) end),
+                ui.managerButton(gettext("BLUEPRINT_SAVE_METADATA"), function() run(function() library.updateMetadata(id, draft:old(), descriptionDraft:old()) end, gettext("BLUEPRINT_METADATA_SAVED")) end, "template-save", 112, true),
+                ui.managerButton(gettext("BLUEPRINT_CANCEL"), function() editing:set(nil) end, "template-cancel", 112),
             }
         elseif deleting:old() == id then
             controls = {
-                builtin.TextView {text = gettext("BLUEPRINT_DELETE_CONFIRM")},
-                textButton(gettext("BLUEPRINT_DELETE_YES"), function() run(function() library.delete(id) end, gettext("BLUEPRINT_DELETED")) end),
-                textButton(gettext("BLUEPRINT_CANCEL"), function() deleting:set(nil) end),
+                ui.managerButton(gettext("BLUEPRINT_DELETE_YES"), function() run(function() library.delete(id) end, gettext("BLUEPRINT_DELETED")) end, "template-confirm-delete", 136),
+                ui.managerButton(gettext("BLUEPRINT_CANCEL"), function() deleting:set(nil) end, "template-cancel", 104),
             }
         else
             controls = {
-                textButton(gettext("BLUEPRINT_EDIT"), function() editing:set(id); draft:set(snapshot.name); descriptionDraft:set(snapshot.description or ""); deleting:set(nil) end),
-                textButton(gettext("BLUEPRINT_COPY"), function() run(function() library.duplicate(id) end, gettext("BLUEPRINT_COPIED")) end),
-                textButton(gettext("BLUEPRINT_DELETE"), function() deleting:set(id); editing:set(nil) end),
-                textButton(gettext("BLUEPRINT_SHARE"), function()
+                ui.managerButton(gettext("BLUEPRINT_EDIT"), function() editing:set(id); draft:set(snapshot.name); descriptionDraft:set(snapshot.description or ""); deleting:set(nil) end, "template-edit"),
+                ui.managerButton(gettext("BLUEPRINT_COPY"), function() run(function() library.duplicate(id) end, gettext("BLUEPRINT_COPIED")) end, "template-copy"),
+                ui.managerButton(gettext("BLUEPRINT_DELETE"), function() deleting:set(id); editing:set(nil) end, "template-delete"),
+                ui.managerButton(gettext("BLUEPRINT_SHARE"), function()
                     local success, failure = pcall(openExchange, "share", id)
                     if not success then message:set(tr("BLUEPRINT_OP_FAILED", {error = failure})) end
-                end),
+                end, "template-share"),
             }
         end
-        local rowMeta = sized(950, -1)
-        rowMeta.localKey = "template-row-" .. tostring(id)
-        -- 用互不重叠的固定列分配整行宽度，按钮只在最右列内对齐。
-        rows[#rows + 1] = builtin.BoxLayout {
-            meta = rowMeta,
-            orientation = builtin.type.Orientation.Horizontal,
-            children = {
+        local actionChildren = {}
+        if deleting:old() == id then
+            actionChildren[#actionChildren + 1] = ui.text(gettext("BLUEPRINT_DELETE_CONFIRM"),
+                ui.layoutMeta(280, 24, "template-delete-question", nil, nil, "font-scale-body"))
+            actionChildren[#actionChildren + 1] = ui.spacer(0, 8)
+        else actionChildren[#actionChildren + 1] = ui.spacer(0, 29) end
+        local actionRow = {ui.spacer(editing:old() == id and 16 or 0, 0)}
+        actionRow[#actionRow + 1] = ui.row(controls, 8)
+        actionChildren[#actionChildren + 1] = ui.row(actionRow)
+        -- Native vertical scrollbar is 8 units; budget 16 including breathing room.
+        -- 950 viewport - 16 scrollbar budget - 24 padding = 910 content.
+        -- 130 preview + 16 gap + 468 text + 16 gap + 280 right-aligned actions.
+        rows[#rows + 1] = ui.card(ui.row({
                 builtin.ImageView {
-                    meta = sized(130, 90),
+                    meta = ui.sized(130, 90),
                     path = sourceId >= 0 and preview or "::/warehouses/icons/wh_goods_preview.tga",
                     scaling = builtin.type.ImageViewScaling.AutoFit,
                 },
-                builtin.Component {
-                    meta = sized(420, -1),
-                    layout = builtin.BoxLayout {
-                        orientation = builtin.type.Orientation.Vertical,
-                        children = {
+                ui.spacer(16, 0),
+                ui.component(ui.column({
                             nameContent,
                             descriptionContent,
-                            builtin.TextView {meta = sized(400, 28), text = details, tooltipWhenClipped = details},
-                        },
-                    },
-                },
-                builtin.Component {
-                    meta = sized(400, 90),
-                    layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
-                        spacer(120, 90),
-                        builtin.Component {meta = sized(280, 90), layout = builtin.BoxLayout {
-                            orientation = builtin.type.Orientation.Horizontal, children = controls}},
-                    }},
-                },
-            },
-        }
+                            ui.text(details, ui.layoutMeta(468, 28, "template-details", {color = ui.theme.mutedText}, nil, "font-scale-annotation"), details),
+                        }, 4), ui.sized(468, -1)),
+                ui.spacer(16, 0),
+                ui.component(ui.column(actionChildren), ui.layoutMeta(280, 90, "template-actions")),
+            }), 910, -1, "template-row-" .. tostring(id))
         end
     end
     if #rows == 0 then
-        rows[1] = builtin.TextView {text = #templates == 0 and query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES")}
+        rows[1] = ui.text(#templates == 0 and query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES"),
+            ui.layoutMeta(910, 40, "template-empty", nil, {12, 12, 12, 12}, "font-scale-body"))
     end
     local filters = {}
     local selectedFilter = 1
@@ -240,11 +213,12 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         local key, label = option[1], gettext(option[2])
         if category:old() == key then selectedFilter = index end
         filters[#filters + 1] = {
-            meta = sized(85, 32),
-            content = builtin.TextView {text = label},
+            meta = ui.layoutMeta(index == 6 and 101 or 69, 24, "template-filter-" .. index, nil, {4, 8, 4, 8}),
+            content = ui.text(label, {class = "font-scale-body"}),
         }
     end
     local categoryFilter = builtin.ToggleButtonGroup {
+        meta = {localKey = "template-filters"},
         buttons = filters, selected = selectedFilter, layout = "Horizontal",
         onValueChange = function(index)
             -- 原生 builtin.lua 使用 ipairs 的 1-based 索引；0 是无效值。
@@ -256,42 +230,32 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         id = windowId, title = gettext("BLUEPRINT_MANAGER_TITLE"),
         initialVisible = true, closable = true, movable = true,
         onClose = close,
-        content = builtin.BoxLayout {
-            orientation = builtin.type.Orientation.Vertical,
-            children = {
-                builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = {
-                    builtin.Component {meta = sized(950, 34), layout = builtin.BoxLayout {
-                        orientation = builtin.type.Orientation.Horizontal,
-                        children = {spacer(830, 34),
-                            textButton(gettext("BLUEPRINT_IMPORT_TITLE"), function() openExchange("import") end, 120)},
-                    }},
+        content = ui.column({
+                ui.column({
+                    ui.component(ui.row({ui.spacer(786, 32),
+                            ui.managerButton(gettext("BLUEPRINT_IMPORT_TITLE"), function() openExchange("import") end, "manager-import", 120, true),
+                            ui.spacer(28, 32)}), ui.layoutMeta(950, 32, "manager-toolbar")),
                     builtin.TextInputField {
-                        meta = sized(950, 34), value = query:old(), placeholderText = gettext("BLUEPRINT_SEARCH"),
+                        meta = ui.layoutMeta(934, 24, "manager-search", nil, {4, 8, 4, 8}), value = query:old(), placeholderText = gettext("BLUEPRINT_SEARCH"),
                         onTyping = function(value) query:set(value) end,
                         onValueChange = function(value) query:set(value) end,
                         onCancel = function() query:set("") end,
                     },
-                    builtin.Component {
-                        meta = sized(950, 36),
-                        layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Horizontal, children = {
-                            builtin.Component {meta = sized(600, 36), layout = builtin.BoxLayout {
-                                orientation = builtin.type.Orientation.Horizontal, children = {categoryFilter}}},
-                            spacer(250, 36),
-                            builtin.TextView {meta = sized(100, 36), text = tr("BLUEPRINT_COUNT", {count = visibleCount})},
-                        }},
-                    },
-                }},
+                    ui.component(ui.row({
+                            ui.component(ui.row({categoryFilter}), ui.sized(600, 32)),
+                            ui.spacer(222, 32),
+                            ui.text(tr("BLUEPRINT_COUNT", {count = visibleCount}), ui.layoutMeta(100, 32, "manager-count", nil, nil, "blueprint-manager-count, font-scale-annotation")),
+                            ui.spacer(28, 32),
+                        }), ui.layoutMeta(950, 32, "manager-filter-row")),
+                }, 8),
                 builtin.ScrollArea {
-                    meta = sized(950, 440),
+                    meta = ui.layoutMeta(950, 440, "manager-list"),
                     horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
-                    verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
-                    content = builtin.Component {
-                        layout = builtin.BoxLayout {orientation = builtin.type.Orientation.Vertical, children = rows},
-                    },
+                    verticalPolicy = builtin.type.ScrollBarPolicy.AsNeededButAlwaysReserveSpace,
+                    content = ui.component(ui.column(rows, 12)),
                 },
-                builtin.TextView {text = status},
-            },
-        },
+                ui.text(status, ui.layoutMeta(950, 28, "manager-status", nil, nil, "font-scale-annotation")),
+            }, 12),
     }
 end)
 
@@ -345,7 +309,7 @@ return {
             for _, child in ipairs(params.children) do
                 if child ~= closeChild then copy.children[#copy.children + 1] = child end
             end
-            local spacerMeta = sized(52, 44)
+            local spacerMeta = ui.sized(52, 44)
             spacerMeta.mouseTransparent = true
             copy.children[#copy.children + 1] = originalChild {
                 h = 1, v = 0,
