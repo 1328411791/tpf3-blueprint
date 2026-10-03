@@ -123,7 +123,15 @@
     "BLUEPRINT_FILTER_ROAD": "Road",
     "BLUEPRINT_FILTER_WATER": "Water",
     "BLUEPRINT_FILTER_AIR": "Air",
-    "BLUEPRINT_FILTER_WAREHOUSE": "Warehouse"
+    "BLUEPRINT_FILTER_WAREHOUSE": "Warehouse",
+    "BLUEPRINT_FILTER_OTHER": "Other",
+    "BLUEPRINT_DEVELOPER_OPTIONS": "Developer options",
+    "BLUEPRINT_DEVELOPER_OPTIONS_EMPTY": "No developer options yet.",
+    "BLUEPRINT_DELETE_ALL": "Delete all templates",
+    "BLUEPRINT_DELETE_ALL_HINT": "Delete every template in the local library across maps. This cannot be undone. Placed buildings remain intact.",
+    "BLUEPRINT_DELETE_ALL_QUESTION": "Delete all {count} templates?",
+    "BLUEPRINT_DELETE_ALL_CONFIRM": "Confirm delete all",
+    "BLUEPRINT_ALL_DELETED": "All templates deleted; menu synchronization pending"
   },
   "zh_CN": {
     "BLUEPRINT_INVALID_NUMBER": "参数包含无效数字",
@@ -249,6 +257,14 @@
     "BLUEPRINT_FILTER_ROAD": "道路",
     "BLUEPRINT_FILTER_WATER": "水运",
     "BLUEPRINT_FILTER_AIR": "航空",
-    "BLUEPRINT_FILTER_WAREHOUSE": "仓库"
+    "BLUEPRINT_FILTER_WAREHOUSE": "仓库",
+    "BLUEPRINT_FILTER_OTHER": "其他",
+    "BLUEPRINT_DEVELOPER_OPTIONS": "开发者选项",
+    "BLUEPRINT_DEVELOPER_OPTIONS_EMPTY": "暂无开发者选项。",
+    "BLUEPRINT_DELETE_ALL": "删除所有模板",
+    "BLUEPRINT_DELETE_ALL_HINT": "删除跨地图共用的本地模板库中的全部模板，无法撤销。地图中已放置的建筑不受影响。",
+    "BLUEPRINT_DELETE_ALL_QUESTION": "确定删除全部 {count} 个模板？",
+    "BLUEPRINT_DELETE_ALL_CONFIRM": "确认删除所有模板",
+    "BLUEPRINT_ALL_DELETED": "所有模板已删除，菜单正在同步"
   }
 }

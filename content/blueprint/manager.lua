@@ -90,6 +90,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local draft = react.useState("")
     local descriptionDraft = react.useState("")
     local deleting = react.useState(nil)
+    local deletingAll = react.useState(false)
     local message = react.useState("")
     local change = react.useState(0)
     local category = react.useState("")
@@ -97,6 +98,7 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         local ok, failure = pcall(fn)
         message:set(ok and success or (tr("BLUEPRINT_OP_FAILED", {error = failure})))
         if ok then
+            deletingAll:set(false)
             editing:set(nil)
             deleting:set(nil)
             change:set(change:old() + 1)
@@ -114,9 +116,10 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local ok, templates = pcall(library.list, query:old())
     local status = message:old()
     if not ok then status = tr("BLUEPRINT_LIBRARY_READ_FAILED", {error = templates}); templates = {} end
+    local isOther = category:old() == "developer_options"
     local rows = {}
     local visibleCount = 0
-    for _, snapshot in ipairs(templates) do
+    for _, snapshot in ipairs(isOther and {} or templates) do
         local id = snapshot.id
         local sourceId = api.res.constructionRep.find(snapshot.constructionFileName)
         local categories = snapshot.categories
@@ -200,7 +203,30 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
             }), 910, -1, "template-row-" .. tostring(id))
         end
     end
-    if #rows == 0 then
+    if isOther then
+        local controls
+        if deletingAll:old() then
+            controls = {
+                ui.managerButton(gettext("BLUEPRINT_DELETE_ALL_CONFIRM"), function()
+                    run(library.deleteAll, gettext("BLUEPRINT_ALL_DELETED"))
+                end, "developer-confirm-delete-all", 144),
+                ui.managerButton(gettext("BLUEPRINT_CANCEL"), function() deletingAll:set(false) end,
+                    "developer-cancel-delete-all", 96),
+            }
+        else
+            controls = {ui.managerButton(gettext("BLUEPRINT_DELETE_ALL"), function()
+                if #library.list() == 0 then message:set(gettext("BLUEPRINT_EMPTY_LIBRARY")); return end
+                deletingAll:set(true)
+            end, "developer-delete-all", 144)}
+        end
+        rows[1] = ui.card(ui.column({
+            ui.text(gettext("BLUEPRINT_DELETE_ALL"), ui.layoutMeta(910, 28, "developer-delete-all-title", nil, nil, "font-scale-body")),
+            ui.text(gettext("BLUEPRINT_DELETE_ALL_HINT"), ui.layoutMeta(910, -1, "developer-delete-all-hint", nil, nil, "font-scale-body")),
+            ui.text(deletingAll:old() and tr("BLUEPRINT_DELETE_ALL_QUESTION", {count = #library.list()}) or "",
+                ui.layoutMeta(910, 28, "developer-delete-all-question", nil, nil, "font-scale-body")),
+            ui.row(controls, 8),
+        }, 8), 910, -1, "developer-delete-all-card")
+    elseif #rows == 0 then
         rows[1] = ui.text(#templates == 0 and query:old() == "" and gettext("BLUEPRINT_EMPTY_LIBRARY") or gettext("BLUEPRINT_NO_MATCHES"),
             ui.layoutMeta(910, 40, "template-empty", nil, {12, 12, 12, 12}, "font-scale-body"))
     end
@@ -208,12 +234,13 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
     local selectedFilter = 1
     local filterOptions = {{"", "BLUEPRINT_FILTER_ALL"}, {"rail_buildings", "BLUEPRINT_FILTER_RAIL"},
         {"road_buildings", "BLUEPRINT_FILTER_ROAD"}, {"water_buildings", "BLUEPRINT_FILTER_WATER"},
-        {"air_buildings", "BLUEPRINT_FILTER_AIR"}, {"warehouses", "BLUEPRINT_FILTER_WAREHOUSE"}}
+        {"air_buildings", "BLUEPRINT_FILTER_AIR"}, {"warehouses", "BLUEPRINT_FILTER_WAREHOUSE"},
+        {"developer_options", "BLUEPRINT_FILTER_OTHER"}}
     for index, option in ipairs(filterOptions) do
         local key, label = option[1], gettext(option[2])
         if category:old() == key then selectedFilter = index end
         filters[#filters + 1] = {
-            meta = ui.layoutMeta(index == 6 and 101 or 69, 24, "template-filter-" .. index, nil, {4, 8, 4, 8}),
+            meta = ui.layoutMeta(index == #filterOptions and 101 or 69, 24, "template-filter-" .. index, nil, {4, 8, 4, 8}),
             content = ui.text(label, {class = "font-scale-body"}),
         }
     end
@@ -223,13 +250,13 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
         onValueChange = function(index)
             -- 原生 builtin.lua 使用 ipairs 的 1-based 索引；0 是无效值。
             local option = filterOptions[index]
-            if option then category:set(option[1]); editing:set(nil); deleting:set(nil) end
+            if option then category:set(option[1]); editing:set(nil); deleting:set(nil); deletingAll:set(false) end
         end,
     }
     return builtin.Window {
         id = windowId, title = gettext("BLUEPRINT_MANAGER_TITLE"),
         initialVisible = true, closable = true, movable = true,
-        onClose = close,
+        onClose = function() deletingAll:set(false); close() end,
         content = ui.column({
                 ui.column({
                     ui.component(ui.row({ui.spacer(786, 32),
@@ -242,9 +269,9 @@ local ManagerWindow = react.RegisterWrapperRecipe("BlueprintTemplateManager", bu
                         onCancel = function() query:set("") end,
                     },
                     ui.component(ui.row({
-                            ui.component(ui.row({categoryFilter}), ui.sized(600, 32)),
-                            ui.spacer(222, 32),
-                            ui.text(tr("BLUEPRINT_COUNT", {count = visibleCount}), ui.layoutMeta(100, 32, "manager-count", nil, nil, "blueprint-manager-count, font-scale-annotation")),
+                            ui.component(ui.row({categoryFilter}), ui.sized(685, 32)),
+                            ui.spacer(137, 32),
+                            ui.text(isOther and gettext("BLUEPRINT_DEVELOPER_OPTIONS") or tr("BLUEPRINT_COUNT", {count = visibleCount}), ui.layoutMeta(100, 32, "manager-count", nil, nil, "blueprint-manager-count, font-scale-annotation")),
                             ui.spacer(28, 32),
                         }), ui.layoutMeta(950, 32, "manager-filter-row")),
                 }, 8),

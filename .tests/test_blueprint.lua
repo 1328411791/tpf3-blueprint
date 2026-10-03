@@ -895,7 +895,7 @@ test("manager preserves native UI and all operations with aligned preview rows",
     assert(#library.list() == countBefore)
     for _, saved in ipairs(library.list()) do assert(saved.id ~= copiedId) end
     local filter = keyed(render(), "template-filters")
-    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 6 and filter.params.selected == 1 and filter.params.layout == "Horizontal")
+    assert(filter.kind == "ToggleButtonGroup" and #filter.params.buttons == 7 and filter.params.selected == 1 and filter.params.layout == "Horizontal")
     local categoryKeys = {"", "rail_buildings", "road_buildings", "water_buildings", "air_buildings", "warehouses"}
     for index, key in ipairs(categoryKeys) do
         filter.params.onValueChange(index)
@@ -914,6 +914,27 @@ test("manager preserves native UI and all operations with aligned preview rows",
         assert(#renderRows() == expected)
         if expected == 0 then assert(keyed(filteredWindow, "template-empty")) end
     end
+    filter.params.onValueChange(7)
+    local developerWindow = render()
+    assert(keyed(developerWindow, "template-filters").params.selected == 7)
+    assert(keyed(developerWindow, "developer-delete-all").params.content.params.text == "删除所有模板")
+    assert(keyed(developerWindow, "manager-count").params.text == "开发者选项")
+    assert(#renderRows() == 0 and #library.list() == countBefore)
+    local beforeDeleteAllWrites = writes
+    keyed(developerWindow, "developer-delete-all").params.onClick()
+    assert(#library.list() == countBefore and writes == beforeDeleteAllWrites)
+    assert(keyed(render(), "developer-delete-all-question").params.text == "确定删除全部 " .. countBefore .. " 个模板？")
+    keyed(render(), "developer-cancel-delete-all").params.onClick()
+    assert(keyed(render(), "developer-delete-all") and #library.list() == countBefore)
+    keyed(render(), "developer-delete-all").params.onClick()
+    failWrite = true
+    keyed(render(), "developer-confirm-delete-all").params.onClick()
+    failWrite = false
+    assert(#library.list() == countBefore and keyed(render(), "developer-confirm-delete-all"))
+    filter.params.onValueChange(6)
+    filter.params.onValueChange(7)
+    assert(keyed(render(), "developer-delete-all"))
+    filter.params.onValueChange(6)
     -- Search and category selection combine, including invalid zero index.
     filter.params.onValueChange(0)
     assert(keyed(render(), "template-filters").params.selected == 6)
@@ -1365,5 +1386,21 @@ test("previous filename loads automatically and new filename takes precedence", 
     disk, writes = oldDisk, oldWrites
     app.getAllUserdata, app.loadUserdata = listUserdata, loadUserdata
     modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+test("delete all persists once, preserves IDs, resets names and synchronizes empty menu", function()
+    local before = library.list()
+    assert(#before > 0)
+    local oldWrites, oldNextId = writes, disk.nextId
+    failWrite = true
+    rejects(library.deleteAll, "disk failure")
+    failWrite = false
+    assert(core.equal(before, library.list()) and writes == oldWrites)
+    library.deleteAll()
+    assert(#library.list() == 0 and #disk.templates == 0)
+    assert(writes == oldWrites + 1 and disk.nextId == oldNextId and disk.nextNameNumber == 1)
+    acknowledge()
+    assert(#library.decorateDefinitions({carrier}) == 0)
+    library.deleteAll()
+    assert(writes == oldWrites + 1)
 end)
 print(tostring(passed) .. " Lua contract tests passed")
