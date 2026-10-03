@@ -39,8 +39,8 @@ function data()
             return {
                 resName = resName, name = gettext("BLUEPRINT_SAVE_TOOL"),
                 description = gettext("BLUEPRINT_SAVE_TOOL_DESCRIPTION"),
-                icon = {icon = "::/warehouses/icons/wh_goods.tga"},
-                previewIcon = {icon = "::/warehouses/icons/wh_goods_preview.tga"},
+                icon = {icon = "blueprint_demo::/blueprint/icons/save_template.tga"},
+                previewIcon = {icon = "blueprint_demo::/blueprint/icons/save_template_preview.tga"},
                 availability = {yearFrom = 0, yearTo = 0},
                 action = "ACTION_CUSTOM", customAction = {recipe = SaveAction, customParam = {}},
                 constructions = {}, categories = {}, params = {}, builderAudioRes = {},

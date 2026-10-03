@@ -170,6 +170,16 @@ function library.rename(id, name)
     library.updateMetadata(id, name)
 end
 
+function library.deleteAll()
+    library.ensureLoaded()
+    if #state.templates == 0 then return end
+    local candidate = core.copy(state)
+    candidate.templates = {}
+    candidate.nextNameNumber = 1
+    -- Persist once and keep internal IDs monotonic, like deleting the last template.
+    commit(candidate)
+end
+
 function library.delete(id)
     library.ensureLoaded()
     local candidate = core.copy(state)
