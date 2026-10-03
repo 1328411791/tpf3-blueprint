@@ -1223,6 +1223,40 @@ test("version 1, 2 and 3 files load unchanged and migrate only on a successful e
     disk, app.loadUserdata, app.saveUserdata = previousDisk, loadUserdata, saveUserdata
     modules["blueprint_demo::/blueprint/library.lua"] = library
 end)
+test("sparse legacy libraries are rejected before migration writes or engine synchronization", function()
+    local persistence = require "blueprint_demo::/blueprint/persistence.lua"
+    local base64 = require "blueprint_demo::/blueprint/base64.lua"
+    local loadUserdata = app.loadUserdata
+    for _, indices in ipairs({{2, 4}, {1, 3}, {1, 2, 4}}) do
+        local malformed = {version = 1, nextId = 100, templates = {}}
+        for _, index in ipairs(indices) do
+            local item = copy(snapshot)
+            item.id = index
+            malformed.templates[index] = item
+        end
+        rejects(function() runtime.validateLibrary(malformed) end, "不连续")
+        rejects(function() persistence.encode(malformed) end, "不连续")
+        for _, version in ipairs({1, 2, 3}) do
+            local stored = copy(malformed)
+            if version == 2 then stored = {version = 2, data = transport.encode(malformed)} end
+            if version == 3 then
+                stored = {version = 3, encoding = "base64", data = base64.encode(transport.serialize(malformed))}
+            end
+            local before = copy(stored)
+            app.loadUserdata = function() return copy(stored) end
+            modules["blueprint_demo::/blueprint/library.lua"] = nil
+            local reloaded = require "blueprint_demo::/blueprint/library.lua"
+            local oldWrites, oldCommands = writes, #commands
+            rejects(function() reloaded.list() end, "不连续")
+            rejects(function() reloaded.save(10) end, "不连续")
+            rejects(function() reloaded.pollSync() end, "不连续")
+            assert(writes == oldWrites and #commands == oldCommands and core.equal(stored, before))
+        end
+    end
+    app.loadUserdata = loadUserdata
+    modules["blueprint_demo::/blueprint/library.lua"] = library
+end)
+
 test("version 4 groups independently decoded templates and preserves cross-category order", function()
     local persistence = require "blueprint_demo::/blueprint/persistence.lua"
     local base64 = require "blueprint_demo::/blueprint/base64.lua"
