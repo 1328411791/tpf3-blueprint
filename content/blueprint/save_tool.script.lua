@@ -39,7 +39,7 @@ function data()
             return {
                 resName = resName, name = gettext("BLUEPRINT_SAVE_TOOL"),
                 description = gettext("BLUEPRINT_SAVE_TOOL_DESCRIPTION"),
-                icon = {icon = "::/warehouses/icons/wh_goods.tga"},
+                icon = {icon = "::/gui/menu/icons/mod_management/mod-subscribe@2x.tga"},
                 previewIcon = {icon = "::/warehouses/icons/wh_goods_preview.tga"},
                 availability = {yearFrom = 0, yearTo = 0},
                 action = "ACTION_CUSTOM", customAction = {recipe = SaveAction, customParam = {}},
