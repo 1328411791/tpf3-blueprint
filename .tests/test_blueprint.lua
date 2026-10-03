@@ -950,7 +950,22 @@ test("manager preserves native UI and all operations with aligned preview rows",
     local shareWindow = render()
     local exchangeStates = states
     assert(shareWindow.params.title == "分享蓝图")
-    assert(shareWindow.params.content.params.children[2].params.value == shareText)
+    assert(keyed(shareWindow, "exchange-input").params.value == shareText)
+    assert(keyed(shareWindow, "exchange-input").params.placeholderText == "")
+    local copyPreview = keyed(shareWindow, "exchange-copy-preview")
+    assert(copyPreview.params.meta.mouseTransparent)
+    assert(copyPreview.params.text == shareText:sub(1, 56) .. (#shareText > 56 and "…" or ""))
+    assert(keyed(shareWindow, "exchange-input").params.filter == nil)
+    for attempt = 1, 3 do
+        local oldKey = shareWindow.params.content.params.children[2].params.meta.localKey
+        keyed(shareWindow, "exchange-input").params.onEditingModeChange(false)
+        shareWindow = render()
+        assert(shareWindow.params.content.params.children[2].params.meta.localKey ~= oldKey)
+        assert(keyed(shareWindow, "exchange-input").params.value == shareText)
+    end
+    keyed(shareWindow, "exchange-input").params.onTyping("")
+    shareWindow = render()
+    assert(keyed(shareWindow, "exchange-input").params.value == shareText)
     shareWindow.params.onClose()
     assert(not shown["blueprint.template.exchange"])
     states, cursor, windowRecipe = managerStates, 0, managerRecipe
@@ -959,6 +974,7 @@ test("manager preserves native UI and all operations with aligned preview rows",
     local importRecipe = windowRecipe
     local importWindow = render(importRecipe)
     assert(importWindow.params.title == "导入蓝图")
+    assert(keyed(importWindow, "exchange-input").params.placeholderText == _("BLUEPRINT_IMPORT_PLACEHOLDER"))
     importWindow.params.content.params.children[2].params.onTyping(shareText)
     importWindow = render(importRecipe)
     assert(importWindow.params.content.params.children[3].params.text:find("管理窗口修改", 1, true))

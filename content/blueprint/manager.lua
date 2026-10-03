@@ -27,10 +27,15 @@ local ExchangeWindow = react.RegisterWrapperRecipe("BlueprintTemplateExchange", 
     local request = react.useState(exchangeRequest)
     local input = react.useState("")
     local feedback = react.useState("")
+    local shareInputRevision = react.useState(0)
     react.onEvent("blueprintExchangeRequested", function(_, payload)
         request:set(payload); input:set(""); feedback:set("")
+        shareInputRevision:set(shareInputRevision:old() + 1)
     end)
     local sharing = request:old().kind == "share"
+    local function restoreShareInput()
+        shareInputRevision:set(shareInputRevision:old() + 1)
+    end
     local function dismiss() api.gui.byId.setVisible(exchangeId, false) end
     local function inspect(text)
         input:set(text)
@@ -50,19 +55,42 @@ local ExchangeWindow = react.RegisterWrapperRecipe("BlueprintTemplateExchange", 
             dismiss()
         end)
     end
+    local exchangeInput = builtin.TextInputField {
+        meta = ui.layoutMeta(544, 24, "exchange-input", nil, {4, 8, 4, 8},
+            sharing and "blueprint-manager-exchange-input, blueprint-manager-share-input, font-scale-body, no-clear-button"
+                or "blueprint-manager-exchange-input, font-scale-body"),
+        maxLength = 2 * 1024 * 1024,
+        value = sharing and request:old().text or input:old(),
+        placeholderText = sharing and "" or gettext("BLUEPRINT_IMPORT_PLACEHOLDER"),
+        focusOnStartEditing = true, deselectOnFocusLost = false,
+        onTyping = sharing and restoreShareInput or inspect,
+        onValueChange = sharing and restoreShareInput or inspect,
+        onEditingModeChange = sharing and function(editing)
+            if not editing then restoreShareInput() end
+        end or nil,
+        onCancel = sharing and restoreShareInput or nil,
+    }
+    local exchangeField = exchangeInput
+    if sharing then
+        -- Keep the complete payload in the native copyable field. Render a bounded
+        -- preview separately so long single-line payloads cannot hide all glyphs.
+        local payload = request:old().text or ""
+        local previewMeta = ui.layoutMeta(544, 24, "exchange-copy-preview", {color = {1, 1, 1, 1}, fontSize = 14}, {4, 8, 4, 8}, "font-scale-body")
+        previewMeta.mouseTransparent = true
+        exchangeField = ui.component(builtin.FloatingLayout {
+            children = {
+                builtin.FloatingLayoutChild {h = -1, v = -1, item = exchangeInput},
+                builtin.FloatingLayoutChild {h = -1, v = -1,
+                    item = ui.text(payload:sub(1, 56) .. (#payload > 56 and "…" or ""), previewMeta)},
+            },
+        }, ui.layoutMeta(560, 32, "exchange-copy-field-" .. tostring(shareInputRevision:old()), {margin = {0, 0, 8, 0}}))
+    end
     return builtin.Window {
         id = exchangeId, title = gettext(sharing and "BLUEPRINT_SHARE_TITLE" or "BLUEPRINT_IMPORT_TITLE"),
         initialVisible = true, closable = true, movable = true, onClose = dismiss,
         content = ui.column({
             ui.text(sharing and request:old().name or gettext("BLUEPRINT_IMPORT_HINT"), ui.sized(560, 30)),
-            builtin.TextInputField {
-                meta = ui.sized(560, 110), maxLength = 2 * 1024 * 1024,
-                value = sharing and request:old().text or input:old(),
-                placeholderText = gettext("BLUEPRINT_IMPORT_PLACEHOLDER"),
-                focusOnStartEditing = true, deselectOnFocusLost = false,
-                onTyping = sharing and function() end or inspect,
-                onValueChange = sharing and function() end or inspect,
-            },
+            exchangeField,
             ui.text(sharing and gettext("BLUEPRINT_SHARE_COPY_HINT") or feedback:old(), ui.sized(560, -1)),
             ui.text(sharing and gettext("BLUEPRINT_SHARE_DEPS") or "", ui.sized(560, -1)),
             ui.component(ui.row({
