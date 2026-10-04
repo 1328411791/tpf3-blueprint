@@ -166,7 +166,7 @@ local function acknowledge()
 end
 local snapshot
 
-test("warehouse snapshot and cargo IDs survive recreation", function()
+test("warehouse snapshot recreates cargo settings as names", function()
     snapshot = core.capture(11, 1, api.engine, types, api.res)
     assert(snapshot.constructionFileName == "::/warehouses/warehouse.con")
     assert(snapshot.params.modules == nil and snapshot.params.tagToCargoType == nil)
@@ -174,7 +174,7 @@ test("warehouse snapshot and cargo IDs survive recreation", function()
     local result = core.toTemplate(snapshot, api.res).constructions[1]
     assert(result.modules[632502500] == "::/warehouses/wh_goods.module")
     assert(result.params.seed == 34 and result.params.year == 1940 and result.params.choice.enabled)
-    assert(result.params.tagToCargoType[632502500] == 7)
+    assert(result.params.tagToCargoType[632502500] == "::/cargos/coal.cargo")
     assert(result.transf[13] == 0 and result.transf[16] == 1)
     result.params.choice[1] = 99
     assert(snapshot.params.choice[1] == 1 and entities[10].CONSTRUCTION.params.choice[1] == 1)

@@ -32,4 +32,4 @@ for path in sorted((root / "content").rglob("*")):
         lua.execute("assert(load(...))", source)
         for key in re.findall(r'"(BLUEPRINT_[A-Z_]+)"', source):
             assert key in translations["en"], (path, key)
-lua.execute((root / "tests" / "test_blueprint.lua").read_text(encoding="utf-8-sig"))
+lua.execute((Path(__file__).resolve().parent / "test_blueprint.lua").read_text(encoding="utf-8-sig"))

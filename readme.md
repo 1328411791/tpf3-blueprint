@@ -24,6 +24,19 @@ A Transport Fever 3 mod that saves existing player buildings as reusable bluepri
 6. Use the category buttons below the search field to filter the list.
 7. Click **Share** on a template, click its string field and press **Ctrl+A**, then **Ctrl+C**. Click **Import Blueprint** to paste a shared string, review its name and category, then import it. Imports receive a new local ID. Templates with missing dependencies can be stored but need the required mods before placement.
 
+## Tests
+
+GitHub Actions runs the Lua contract tests whenever a pull request is opened, reopened or updated. The workflow can also be started manually from the Actions tab. It uses Python 3.12 and Lupa; no game installation is required. Python setup and dependency caching follow the [official setup-python action](https://github.com/actions/setup-python).
+
+Run the same suite locally with:
+
+```sh
+python -m pip install -r .tests/requirements.txt
+python .tests/run_tests.py
+```
+
+The runner also checks Lua syntax and translation keys/placeholders. Game APIs are mocked, so in-game testing is still needed for engine integration.
+
 ## Scope
 
 Each blueprint contains one building. Nearby roads and tracks, vehicles, routes and building inventories are not included. Templates require the original building and module mods to be available.
