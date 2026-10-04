@@ -213,7 +213,7 @@ function core.capture(entity, id, engine, types, res, transportModes, nameNumber
         if key ~= "modules" then params[key] = core.copy(value) end
     end
     if params.year == nil then params.year = engine.util.getYear() end
-    -- 库存货种在引擎中使用临时资源 ID；存储名称，放置时重新解析。
+    -- 捕获时将货种归一为名称；建筑模板同样使用名称而非临时资源 ID。
     local cargoByTag = {}
     for tag, cargo in pairs(params.tagToCargoType or {}) do
         cargoByTag[tag] = resourceName(res.cargoTypeRep, cargo, tr("BLUEPRINT_CARGO_SLOT", {slot = tag}))
@@ -255,7 +255,8 @@ function core.toTemplate(snapshot, res, currentYear)
     if params.year == nil then params.year = currentYear end
     if next(snapshot.cargoByTag or {}) then
         params.tagToCargoType = {}
-        for tag, name in pairs(snapshot.cargoByTag) do params.tagToCargoType[tag] = res.cargoTypeRep.find(name) end
+        -- ConstructionBuilder 的 tagToCargoType 值必须是货种名称字符串。
+        for tag, name in pairs(snapshot.cargoByTag) do params.tagToCargoType[tag] = name end
     end
     return {constructions = {{
         constructionFileName = snapshot.constructionFileName,
